@@ -41,6 +41,10 @@ bool is_meson_or_antimeson( int pdg_code ) {
   // will have positive PDG codes, while antimesons will have negative ones.
   int abs_pdg = std::abs( pdg_code );
 
+  // make exception for charged pions
+  // we want to return false to satisfy defintion of mc_is_signal_
+  if (abs_pdg == 211) return false;
+
   // Meson PDG codes have no more than seven digits. Seven-digit
   // codes beginning with "99" are reserved for generator-specific
   // particles
@@ -92,11 +96,11 @@ constexpr int PI_PLUS = 211;
 
 // Values of parameters to use in analysis cuts
 constexpr float DEFAULT_PROTON_PID_CUT = 0.2;
-constexpr float LEAD_P_MIN_MOM_CUT = 0.250; // GeV/c
+constexpr float LEAD_P_MIN_MOM_CUT = 0.300; // GeV/c
 constexpr float LEAD_P_MAX_MOM_CUT = 1.; // GeV/c
-constexpr float MUON_P_MIN_MOM_CUT = 0.100; // GeV/c
+constexpr float MUON_P_MIN_MOM_CUT = 0.150; // GeV/c
 constexpr float MUON_P_MAX_MOM_CUT = 1.200; // GeV/c
-constexpr float CHARGED_PI_MOM_CUT = 0.; // GeV/c
+constexpr float CHARGED_PI_MOM_CUT = 0.05; // GeV/c
 constexpr float MUON_MOM_QUALITY_CUT = 0.25; // fractional difference
 
 constexpr float TOPO_SCORE_CUT = 0.1;
@@ -109,6 +113,10 @@ constexpr float MUON_PID_CUT = 0.2;
 
 constexpr float TRACK_SCORE_CUT = 0.5;
 
+constexpr float PROTON_BDT_CUT = 0.0;
+constexpr float MUON_BDT_CUT = 0.0;
+constexpr float TOPO_SCORE_CUT_2 = 0.67; 
+constexpr float PFP_DISTANCE_CUT = 9.5; 
 // Function that defines the track-length-dependent proton PID cut
 double proton_pid_cut( double track_length ) {
 
@@ -167,7 +175,8 @@ class AnalysisEvent {
     EventCategory categorize_event();
     void apply_selection();
     void apply_numu_CC_selection();
-    void find_muon_candidate();
+    void find_pion_candidate();
+    void find_muon_candidate(); 
     void find_lead_p_candidate();
     void compute_observables();
     void compute_mc_truth_observables();
@@ -254,6 +263,9 @@ class AnalysisEvent {
     MyPointer< std::vector<float> > track_mcs_mom_mu_;
     MyPointer< std::vector<float> > track_chi2_proton_;
 
+    // BDT scores
+    MyPointer< std::vector<float> > proton_BDT_score_;
+    MyPointer< std::vector<float> > muon_BDT_score_;
     // Log-likelihood ratio particle ID information
 
     // Product of muon/proton log-likelihood ratios from all wire three planes
@@ -310,13 +322,15 @@ class AnalysisEvent {
     bool mc_muon_in_mom_range_ = false;
     bool mc_lead_p_in_mom_range_ = false;
     bool mc_no_fs_mesons_ = false;
+    bool mc_1cpi_= false;
+    
     // Intersection of all of these requirements
     bool mc_is_signal_ = false;
 
     // Extra flags for looking specifically at final-state pions
     bool mc_no_fs_pi0_ = false;
     bool mc_no_charged_pi_above_threshold_ = false;
-
+	
     EventCategory category_ = kUnknown;
 
     // **** Reco selection requirements ****
@@ -336,8 +350,14 @@ class AnalysisEvent {
     // proton containment volume
     bool sel_pfp_starts_in_PCV_ = false;
 
+    // Whether Pandora assigns PDG score that of a muon netrino
+    bool sel_pandoraPDG_isnumu_ = false;
+
     // True if a generation == 2 muon candidate was identified
     bool sel_has_muon_candidate_ = false;
+
+    // Whether all pfps are contained
+    bool sel_all_pfp_contained_ = true;
 
     // Whether the end point of the muon candidate track is contained
     // in the "containment volume"
@@ -352,6 +372,19 @@ class AnalysisEvent {
 
     // False if at least one generation == 2 shower was reconstructed
     bool sel_no_reco_showers_ = false;
+
+    // False if less than 3 tracks reconstructed
+    bool sel_min_3_tracks_ = false;
+
+    // False if number of non proton-like particles is not exactly two
+    bool sel_2_non_proton_ = false;
+   
+    // All pfp must start within certain distance of reco vtx
+    bool sel_all_pfp_in_vtx_proximity_ = true; 
+   
+    // Whether it has pion candidate
+    bool sel_has_pion_candidate_ = false;
+ 
     // Whether at least one generation == 2 reco track exists that is not the
     // muon candidate
     bool sel_has_p_candidate_ = false;
@@ -365,19 +398,26 @@ class AnalysisEvent {
     // above LEAD_P_MIN_MOM_CUT and below LEAD_P_MAX_MOM_CUT
     bool sel_lead_p_passed_mom_cuts_ = false;
     // Intersection of all of the above requirements
-    bool sel_CCNp0pi_ = false;
+    bool sel_CCNp1pi_ = false;
 
     // Muon and leading proton candidate indices (BOGUS_INDEX if not present)
     // in the reco track arrays
-    int muon_candidate_idx_ = BOGUS_INDEX;
+    int muon_candidate_pid_idx_ = BOGUS_INDEX;
+    int muon_candidate_length_idx_ = BOGUS_INDEX;
+    int muon_candidate_bdt_idx_ = BOGUS_INDEX;
+    int pion_candidate_idx_ = BOGUS_INDEX;
     int lead_p_candidate_idx_ = BOGUS_INDEX;
 
     // ** Reconstructed observables **
 
+    // n non proton like
+    int n_non_proton_like_ = BOGUS_INT;
+    int n_reco_tracks_ = BOGUS_INT;
+
     // 3-momenta
     MyPointer< TVector3 > p3_mu_;
     MyPointer< TVector3 > p3_lead_p_;
-
+    MyPointer< TVector3 > p3_cpi_;
     // Reconstructed 3-momenta for all proton candidates,
     // ordered from highest to lowest by magnitude
     MyPointer< std::vector<TVector3> > p3_p_vec_;
@@ -399,11 +439,15 @@ class AnalysisEvent {
     // 3-momenta
     MyPointer< TVector3 > mc_p3_mu_;
     MyPointer< TVector3 > mc_p3_lead_p_;
+    MyPointer< TVector3 > mc_p3_cpi_;
 
-    // True 3-momenta for all true MC protons, ordered from highest to lowest
+    // True 3-momenta for all true MC protons and charged pions, ordered from highest to lowest
     // by magnitude
     MyPointer< std::vector<TVector3> > mc_p3_p_vec_;
+    int mc_n_protons_ = 0;
 
+    MyPointer< std::vector<TVector3> > mc_p3_cpi_vec_;
+    int mc_n_cpi_ = 0; 
     // MC truth STVs and other variables of interest
     float mc_delta_pT_ = BOGUS;
     float mc_delta_phiT_ = BOGUS;
@@ -413,6 +457,7 @@ class AnalysisEvent {
     float mc_delta_pTx_ = BOGUS;
     float mc_delta_pTy_ = BOGUS;
     float mc_theta_mu_p_ = BOGUS;
+    float mc_theta_mu_cpi_ = BOGUS;
 
     bool reco_vertex_inside_FV() {
       return point_inside_FV( nu_vx_, nu_vy_, nu_vz_ );
@@ -537,6 +582,11 @@ void set_event_branch_addresses(TTree& etree, AnalysisEvent& ev)
   set_object_input_branch_address( etree, "trk_mcs_muon_mom_v",
     ev.track_mcs_mom_mu_ );
 
+  // BDT scores
+  set_object_input_branch_address( etree, "protonBDTResponses",
+    ev.proton_BDT_score_);
+  set_object_input_branch_address( etree, "muonBDTResponses",
+    ev.muon_BDT_score_);
   // Some ntuples exclude the old proton chi^2 PID score. Only include it
   // in the output if this branch is available.
   bool has_chipr = ( etree.GetBranch("trk_pid_chipr_v") != nullptr );
@@ -640,6 +690,10 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
   set_output_branch_address( out_tree, "mc_is_signal",
     &ev.mc_is_signal_, create, "mc_is_signal/O" );
 
+  set_output_branch_address( out_tree, "mc_1cpi",
+    &ev.mc_1cpi_, create, "mc_1cpi/O" );
+
+
   // MC event category
   set_output_branch_address( out_tree, "category",
     &ev.category_, create, "category/I" );
@@ -702,6 +756,21 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
   set_output_branch_address( out_tree, "sel_no_reco_showers",
     &ev.sel_no_reco_showers_, create, "sel_no_reco_showers/O" );
 
+  set_output_branch_address( out_tree, "sel_min_3_tracks",
+    &ev.sel_min_3_tracks_, create, "sel_min_3_tracks/O" );
+
+  set_output_branch_address( out_tree, "sel_2_non_proton",
+    &ev.sel_2_non_proton_, create, "sel_2_non_proton/O" );
+
+  set_output_branch_address( out_tree, "sel_has_pion_candidate",
+    &ev.sel_has_pion_candidate_, create, "sel_has_pion_candidate/O");
+ 
+  set_output_branch_address( out_tree, "sel_all_pfp_contained",
+    &ev.sel_all_pfp_contained_, create, "sel_all_pfp_contained/O" );
+ 
+  set_output_branch_address( out_tree, "sel_all_pfp_in_vtx_proximity",
+    &ev.sel_all_pfp_in_vtx_proximity_, create, "sel_all_pfp_in_vtx_proximity/O" );
+
   set_output_branch_address( out_tree, "sel_has_muon_candidate",
     &ev.sel_has_muon_candidate_, create,
     "sel_has_muon_candidate/O" );
@@ -727,40 +796,76 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
   set_output_branch_address( out_tree, "sel_lead_p_passed_mom_cuts",
     &ev.sel_lead_p_passed_mom_cuts_, create, "sel_lead_p_passed_mom_cuts/O" );
 
-  set_output_branch_address( out_tree, "sel_CCNp0pi",
-    &ev.sel_CCNp0pi_, create, "sel_CCNp0pi/O" );
+  set_output_branch_address( out_tree, "sel_CCNp1pi",
+    &ev.sel_CCNp1pi_, create, "sel_CCNp1pi/O" );
 
   // Index for the muon candidate in the vectors of PFParticles
-  set_output_branch_address( out_tree, "muon_candidate_idx",
-    &ev.muon_candidate_idx_, create, "muon_candidate_idx/I" );
+  set_output_branch_address( out_tree, "muon_candidate_pid_idx",
+    &ev.muon_candidate_pid_idx_, create, "muon_candidate_pid_idx/I" );
+
+  set_output_branch_address( out_tree, "muon_candidate_length_idx",
+    &ev.muon_candidate_length_idx_, create, "muon_candidate_length_idx/I" );
+
+  set_output_branch_address( out_tree, "muon_candidate_bdt_idx",
+    &ev.muon_candidate_bdt_idx_, create, "muon_candidate_bdt_idx/I" );
+  // pion candidate index
+  set_output_branch_address( out_tree, "pion_candidate_idx",
+    &ev.pion_candidate_idx_, create, "pion_candidate_idx/I" );
 
   // Index for the leading proton candidate in the vectors of PFParticles
   set_output_branch_address( out_tree, "lead_p_candidate_idx",
     &ev.lead_p_candidate_idx_, create, "lead_p_candidate_idx/I" );
 
-  // Reco 3-momenta (muon, leading proton)
+  // Reco n_non_proton_like
+  set_output_branch_address( out_tree,
+    "n_non_proton_like", &ev.n_non_proton_like_, create, "n_non_proton_like/I" );
+
+  // N reco track-like
+  set_output_branch_address( out_tree,
+    "n_reco_tracks", &ev.n_reco_tracks_, create, "n_reco_tracks/I" );
+
+  // BDT scores
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "muon_BDT_score", ev.muon_BDT_score_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "proton_BDT_score", ev.proton_BDT_score_, create );
+  // Reco 3-momenta (muon, leading proton, pion)
   set_object_output_branch_address< TVector3 >( out_tree,
     "p3_mu", ev.p3_mu_, create );
 
   set_object_output_branch_address< TVector3 >( out_tree,
     "p3_lead_p", ev.p3_lead_p_, create );
 
+  set_object_output_branch_address< TVector3 >( out_tree,
+    "p3_cpi", ev.p3_cpi_, create );
   // Reco 3-momenta (all proton candidates, ordered from highest to lowest
   // magnitude)
   set_object_output_branch_address< std::vector<TVector3> >( out_tree,
     "p3_p_vec", ev.p3_p_vec_, create );
 
-  // True 3-momenta (muon, leading proton)
+  // True 3-momenta (muon, leading proton, leading charged pion)
   set_object_output_branch_address< TVector3 >( out_tree,
     "mc_p3_mu", ev.mc_p3_mu_, create );
 
   set_object_output_branch_address< TVector3 >( out_tree,
     "mc_p3_lead_p", ev.mc_p3_lead_p_, create );
 
+  set_object_output_branch_address< TVector3 >( out_tree,
+    "mc_p3_cpi", ev.mc_p3_cpi_, create );
+
   // True 3-momenta (all protons, ordered from highest to lowest magnitude)
   set_object_output_branch_address< std::vector<TVector3> >( out_tree,
     "mc_p3_p_vec", ev.mc_p3_p_vec_, create );
 
+  set_output_branch_address( out_tree, "mc_n_protons",
+    &ev.mc_n_protons_, create, "mc_n_protons/I" );
+  
+  set_object_output_branch_address< std::vector<TVector3> >( out_tree,
+    "mc_p3_cpi_vec", ev.mc_p3_cpi_vec_, create );
+ 
+  set_output_branch_address( out_tree, "mc_n_cpi",
+      &ev.mc_n_cpi_, create, "n_cpi/I" );
   // Reco STVs
   set_output_branch_address( out_tree, "delta_pT",
     &ev.delta_pT_, create, "delta_pT/F" );
@@ -810,6 +915,9 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
 
   set_output_branch_address( out_tree, "mc_theta_mu_p",
     &ev.mc_theta_mu_p_, create, "mc_theta_mu_p/F" );
+
+  set_output_branch_address( out_tree, "mc_theta_mu_cpi",
+    &ev.mc_theta_mu_cpi_, create, "mc_theta_mu_cpi/F" );
 
   // *** Branches copied directly from the input ***
 
@@ -1006,8 +1114,8 @@ void analyze(const std::vector<std::string>& in_file_names,
 {
   // Get the TTrees containing the event ntuples and subrun POT information
   // Use TChain objects for simplicity in manipulating multiple files
-  TChain events_ch( "nuselection/NeutrinoSelectionFilter" );
-  TChain subruns_ch( "nuselection/SubRun" );
+  TChain events_ch( "NeutrinoSelectionFilter" );
+  TChain subruns_ch( "SubRun" );
 
   for ( const auto& f_name : in_file_names ) {
     events_ch.Add( f_name.c_str() );
@@ -1046,6 +1154,7 @@ void analyze(const std::vector<std::string>& in_file_names,
   bool created_output_branches = false;
   long events_entry = 0;
   while ( true ) {
+    //if (events_entry == 100000) break;
 
     if ( events_entry % 1000 == 0 ) {
       std::cout << "Processing event #" << events_entry << '\n';
@@ -1083,7 +1192,8 @@ void analyze(const std::vector<std::string>& in_file_names,
     }
 
     set_event_output_branch_addresses( *out_tree, cur_event, create_them );
-
+    
+    //if (num_pf_particles_ == BOGUS_INT || num_pf_particles_ > 10000000)  
     // Apply the CCNp0pi selection criteria and categorize the event.
     cur_event.apply_selection();
 
@@ -1135,8 +1245,11 @@ EventCategory AnalysisEvent::categorize_event() {
   mc_no_fs_pi0_ = true;
   mc_no_charged_pi_above_threshold_ = true;
   mc_no_fs_mesons_ = true;
+  mc_1cpi_ = false;
 
+  
   double lead_p_mom = LOW_FLOAT;
+  double lead_cpi_mom = LOW_FLOAT; //K
 
   for ( size_t p = 0u; p < mc_nu_daughter_pdg_->size(); ++p ) {
     int pdg = mc_nu_daughter_pdg_->at( p );
@@ -1144,6 +1257,7 @@ EventCategory AnalysisEvent::categorize_event() {
 
     // Do the general check for (anti)mesons first before considering
     // any individual PDG codes
+    // make exception for charged pion
     if ( is_meson_or_antimeson(pdg) ) {
       mc_no_fs_mesons_ = false;
     }
@@ -1157,49 +1271,76 @@ EventCategory AnalysisEvent::categorize_event() {
       }
     }
     else if ( pdg == PROTON ) {
+      mc_n_protons_ += 1;
       double mom = real_sqrt( std::pow(energy, 2) - std::pow(PROTON_MASS, 2) );
       if ( mom > lead_p_mom ) lead_p_mom = mom;
     }
     else if ( pdg == PI_ZERO ) {
       mc_no_fs_pi0_ = false;
     }
+    // check charged pion above threshold present
     else if ( std::abs(pdg) == PI_PLUS ) {
       double mom = real_sqrt( std::pow(energy, 2) - std::pow(PI_PLUS_MASS, 2) );
       if ( mom > CHARGED_PI_MOM_CUT ) {
         mc_no_charged_pi_above_threshold_ = false;
+	mc_n_cpi_ += 1;
+	lead_cpi_mom = mom; //K	
       }
     }
   }
+  
+  // Check number of charged pions
+  if (mc_n_cpi_ == 1) {
+    mc_1cpi_ = true;
+  }
 
   // Check that the leading proton has a momentum within the allowed range
-  if ( lead_p_mom >= LEAD_P_MIN_MOM_CUT && lead_p_mom <= LEAD_P_MAX_MOM_CUT ) {
+  if ( lead_p_mom >= LEAD_P_MIN_MOM_CUT && lead_p_mom <= LEAD_P_MAX_MOM_CUT  ) {
     mc_lead_p_in_mom_range_ = true;
   }
 
   mc_is_signal_ = mc_vertex_in_FV_ && mc_neutrino_is_numu_
     && mc_muon_in_mom_range_ && mc_lead_p_in_mom_range_
-    && mc_no_fs_mesons_;
+    && mc_no_fs_mesons_ && mc_no_fs_pi0_ && mc_1cpi_;
+  
+
 
   // Sort signal by interaction mode
   if ( mc_is_signal_ ) {
     if ( mc_nu_interaction_type_ == 0 ) return kSignalCCQE; // QE
     else if ( mc_nu_interaction_type_ == 10 ) return kSignalCCMEC; // MEC
     else if ( mc_nu_interaction_type_ == 1 ) return kSignalCCRES; // RES
-    //else if ( mc_nu_interaction_type_ == 2 ) // DIS
-    //else if ( mc_nu_interaction_type_ == 3 ) // COH
+    else if ( mc_nu_interaction_type_ == 2 )  return kSignalCCDIS;// DIS
+    else if ( mc_nu_interaction_type_ == 3 ) return kSignalCCCOH;// COH
     else return kSignalOther;
   }
-  else if ( !mc_no_fs_pi0_ || !mc_no_charged_pi_above_threshold_ ) {
-    return kNuMuCCNpi;
+
+  // any pion (charged or neutral) and proton inclusice (Xp, X=0,1,2...)
+  /*else if ( !mc_no_fs_pi0_ &&  (mc_n_cpi_>=1) ) {
+    C1pi0p
+  }*/
+
+  // pi0 proton inclusive, with pi0s any number of mesons allowed
+  else if (!mc_no_fs_pi0_) {
+    return kNuMuCCpi0;
   }
-  else if ( !mc_lead_p_in_mom_range_ ) {
-    return kNuMuCC0pi0p;
+
+  // at least 1 proton above threshold, no charged pions 
+  else if ( mc_muon_in_mom_range_ && mc_no_charged_pi_above_threshold_) {
+    return kNuMuCC0piXp; 
   }
+  
+  // one charged pion above threhold, no protons, any number of mesons
+  //else if (mc_1cpi_ && !mc_lead_p_in_mom_range_ ) {
+  //  return kNuMuCC1pi0p;
+
+  //}
   else return kNuMuCCOther;
 }
 
 void AnalysisEvent::apply_numu_CC_selection() {
-
+  //use nu_pdg_ == slpdg (from PeLEE ntuple)
+  sel_pandoraPDG_isnumu_ = (nu_pdg_ == MUON_NEUTRINO);
   sel_reco_vertex_in_FV_ = this->reco_vertex_inside_FV();
   sel_topo_cut_passed_ = topological_score_ > TOPO_SCORE_CUT;
   sel_cosmic_ip_cut_passed_ = cosmic_impact_parameter_ > COSMIC_IP_CUT;
@@ -1239,7 +1380,7 @@ void AnalysisEvent::apply_numu_CC_selection() {
   this->find_muon_candidate();
 
   sel_nu_mu_cc_ = sel_reco_vertex_in_FV_ && sel_pfp_starts_in_PCV_
-    && sel_has_muon_candidate_ && sel_topo_cut_passed_;
+    && sel_has_muon_candidate_ && sel_topo_cut_passed_; // && sel_pandoraPDG_isnumu_;
 }
 
 // Sets the index of the muon candidate in the track vectors, or BOGUS_INDEX if
@@ -1249,6 +1390,8 @@ void AnalysisEvent::find_muon_candidate() {
 
   std::vector<int> muon_candidate_indices;
   std::vector<int> muon_pid_scores;
+  std::vector<int> muon_lengths;
+  std::vector<int> muon_bdt_scores;
 
   for ( int p = 0; p < num_pf_particles_; ++p ) {
     // Only direct neutrino daughters (generation == 2) will be considered as
@@ -1260,6 +1403,7 @@ void AnalysisEvent::find_muon_candidate() {
     float start_dist = track_start_distance_->at( p );
     float track_length = track_length_->at( p );
     float pid_score = track_llr_pid_score_->at( p );
+    float bdt_score = muon_BDT_score_->at( p ); 
 
     if ( track_score > MUON_TRACK_SCORE_CUT
       && start_dist < MUON_VTX_DISTANCE_CUT
@@ -1268,6 +1412,8 @@ void AnalysisEvent::find_muon_candidate() {
     {
       muon_candidate_indices.push_back( p );
       muon_pid_scores.push_back( pid_score );
+      muon_lengths.push_back( track_length );
+      muon_bdt_scores.push_back( bdt_score );	
     }
   }
 
@@ -1275,29 +1421,86 @@ void AnalysisEvent::find_muon_candidate() {
   if ( num_candidates > 0u ) sel_has_muon_candidate_ = true;
 
   if ( num_candidates == 1u ) {
-    muon_candidate_idx_ = muon_candidate_indices.front();
+    muon_candidate_pid_idx_ = muon_candidate_indices.front();
+    muon_candidate_length_idx_ = muon_candidate_indices.front();
+    muon_candidate_bdt_idx_ = muon_candidate_indices.front();
   }
   else if ( num_candidates > 1u ) {
     // In the case of multiple muon candidates, choose the one with the highest
-    // PID score (most muon-like) as the one to use
+    // PID score (most muon-like) and the longest length (will compare which method does best downstream)
     float highest_score = LOW_FLOAT;
-    int chosen_index = BOGUS_INDEX;
+    int chosen_index_pid = BOGUS_INDEX;
+    float longest = LOW_FLOAT;
+    int chosen_index_length = BOGUS_INDEX;
+    float most_muon_like = BOGUS + 1. ;
+    int chosen_index_bdt = BOGUS_INDEX;
+
     for ( size_t c = 0; c < num_candidates; ++c ) {
       float score = muon_pid_scores.at( c );
+      float length = muon_lengths.at( c );
+      float muon_bdt_score = muon_bdt_scores.at( c );
+
       if ( highest_score < score ) {
         highest_score = score;
-        chosen_index = muon_candidate_indices.at( c );
+        chosen_index_pid = muon_candidate_indices.at( c );
+      }
+
+      if ( longest < length ) {
+        longest = length;
+        chosen_index_length = muon_candidate_indices.at( c );
+      }
+  
+      if (most_muon_like > muon_bdt_score ) {
+	most_muon_like = muon_bdt_score;
+	chosen_index_bdt = muon_candidate_indices.at( c );
       }
     }
-    muon_candidate_idx_ = chosen_index;
+    muon_candidate_pid_idx_ = chosen_index_pid;
+    muon_candidate_length_idx_ = chosen_index_length;
+    muon_candidate_bdt_idx_ = chosen_index_bdt;
   }
   else {
-    muon_candidate_idx_ = BOGUS_INDEX;
+    muon_candidate_pid_idx_ = BOGUS_INDEX;
+    muon_candidate_length_idx_ = BOGUS_INDEX;
+    muon_candidate_bdt_idx_ = BOGUS_INDEX;
   }
 }
 
+void AnalysisEvent::find_pion_candidate() {
+
+  float current_proton_bdt_score = 1.1; 
+  int current_pion_candidate_idx_ = BOGUS_INDEX;
+
+  for ( int p = 0; p < num_pf_particles_; ++p ) {
+    // Only direct neutrino daughters (generation == 2) will be considered
+    unsigned int generation = pfp_generation_->at( p );
+    if ( generation != 2u ) continue;
+
+    // Skip particles already identified as muons
+    if ( p == muon_candidate_pid_idx_) continue;
+
+    // Skip particles with bogus track score 
+    float track_length = pfp_track_score_->at( p );
+    if (track_length <= 0. ) continue;
+
+    float proton_bdt_score = proton_BDT_score_->at( p );
+
+    // Skip particles for which BDT score could not be calculated
+    // Use BOGUS - 1 to avoid compring floating point numbers
+    if ( proton_bdt_score > BOGUS - 1. ) continue; 
+    
+    if ( proton_bdt_score < current_proton_bdt_score)
+    {
+      sel_has_pion_candidate_ = true; 
+      current_pion_candidate_idx_ = p;
+      current_proton_bdt_score = proton_bdt_score;	
+    }
+  }
+ 
+  if (current_pion_candidate_idx_ != BOGUS_INDEX) pion_candidate_idx_ = current_pion_candidate_idx_;
+}  
 // Sets the analysis cut flags and decides whether the MC truth information
-// matches our signal definition
+/// matches our signal definition
 void AnalysisEvent::apply_selection() {
 
   // If we're working with an MC event, then categorize the event and set the
@@ -1308,42 +1511,83 @@ void AnalysisEvent::apply_selection() {
   // Set sel_nu_mu_cc_ by applying those criteria
   this->apply_numu_CC_selection();
 
+  // Count number of track like objects reconstructed
   // Fail the shower cut if any showers were reconstructed
   // NOTE: We could do this quicker like this,
   //   sel_no_reco_showers_ = ( num_showers_ > 0 );
   // but it might be nice to be able to adjust the track score for this cut.
   // Thus, we do it the hard way.
   int reco_shower_count = 0;
+  int reco_track_count = 0;
+  int n_non_proton_like = 0;
+
   for ( int p = 0; p < num_pf_particles_; ++p ) {
 
     // Only check direct neutrino daughters (generation == 2)
+    
     unsigned int generation = pfp_generation_->at( p );
     if ( generation != 2u ) continue;
 
+
+    float proton_score = proton_BDT_score_->at ( p );
+
+
+    if ( proton_score < PROTON_BDT_CUT) ++n_non_proton_like;
+
     float tscore = pfp_track_score_->at( p );
+
+
     if ( tscore <= TRACK_SCORE_CUT ) ++reco_shower_count;
+    else ++reco_track_count;
   }
+ 
   // Check the shower cut
   sel_no_reco_showers_ = ( reco_shower_count == 0 );
 
+  // Check the track count. Need at least 3 for CC1piNp
+  sel_min_3_tracks_ = ( reco_track_count >=3 );
+  n_reco_tracks_ = reco_track_count;
+  
+  // Check we have 2 non proton like daugthers
+  sel_2_non_proton_ = (n_non_proton_like == 2);
+  n_non_proton_like_ = n_non_proton_like;
+  
   // Set flags that default to true here
-  sel_passed_proton_pid_cut_ = true;
-  sel_protons_contained_ = true;
-
+  sel_all_pfp_contained_ = true;
   // Set flags that default to false here
   sel_muon_contained_ = false;
 
+  // If we have at least 3 tracks, 2 being non-proton like, find pion candidate
+  // Only bother to do it if two above conditions are left to save computational time
+  if ( sel_no_reco_showers_ && sel_min_3_tracks_ && sel_2_non_proton_ ) this->find_pion_candidate(); 
+
+  // If no pion candidate found, skip to next event
+  if ( !sel_has_pion_candidate_)
+  {
+    sel_CCNp1pi_ = false;
+    return;
+  }  
   for ( int p = 0; p < num_pf_particles_; ++p ) {
 
     // Only worry about direct neutrino daughters (PFParticles considered
     // daughters of the reconstructed neutrino)
     unsigned int generation = pfp_generation_->at( p );
-    if ( generation != 2u ) continue;
+    if ( generation != 2u ) continue; 
+ 
+    float start_dist = track_start_distance_->at( p );
+    if ( start_dist > PFP_DISTANCE_CUT ) sel_all_pfp_in_vtx_proximity_ = false;
 
+    // Check all reco PFPs are contained
+    float endx = track_endx_->at( p );
+    float endy = track_endy_->at( p );
+    float endz = track_endz_->at( p );
+    bool end_contained = this->in_proton_containment_vol( endx, endy, endz );
+
+    if( !(end_contained) )  sel_all_pfp_contained_ = false;
+    
     // Check that we can find a muon candidate in the event. If more than
     // one is found, also fail the cut.
-    if ( p == muon_candidate_idx_ ) {
-
+    if ( p == muon_candidate_pid_idx_ ) {
       // Check whether the muon candidate is contained. Use the same
       // containment volume as the protons. TODO: revisit this as needed.
       float endx = track_endx_->at( p );
@@ -1355,7 +1599,6 @@ void AnalysisEvent::apply_selection() {
 
       // Check that the muon candidate is above threshold. Use the best
       // momentum based on whether it was contained or not.
-
       float muon_mom = LOW_FLOAT;
       float range_muon_mom = track_range_mom_mu_->at( p );
       float mcs_muon_mom = track_mcs_mom_mu_->at( p );
@@ -1380,48 +1623,18 @@ void AnalysisEvent::apply_selection() {
       }
 
     }
-    else {
-
-      float track_score = pfp_track_score_->at( p );
-      if ( track_score <= TRACK_SCORE_CUT ) continue;
-
-      // Bad tracks in the searchingfornues TTree can have
-      // bogus track lengths. This skips those.
-      float track_length = track_length_->at( p );
-      if ( track_length <= 0. ) continue;
-
-      // We found a reco track that is not the muon candidate. All such
-      // tracks are considered proton candidates.
-      sel_has_p_candidate_ = true;
-
-      float llr_pid_score = track_llr_pid_score_->at( p );
-
-      // Check whether the current proton candidate fails the proton PID cut
-      if ( llr_pid_score > proton_pid_cut(track_length) ) {
-        sel_passed_proton_pid_cut_ = false;
-      }
-
-      // Check whether the current proton candidate fails the containment cut
-      float endx = track_endx_->at( p );
-      float endy = track_endy_->at( p );
-      float endz = track_endz_->at( p );
-      bool end_contained = this->in_proton_containment_vol( endx, endy, endz );
-      if ( !end_contained ) sel_protons_contained_ = false;
-    }
-
-  }
-
-  // Don't bother to apply the cuts that involve the leading
-  // proton candidate if we don't have one
-  if ( !sel_has_p_candidate_ ) {
-    sel_CCNp0pi_ = false;
-    return;
-  }
-
+  } 
   // All that remains is to apply the leading proton candidate cuts. We could
   // search for it above, but doing it here makes the code more readable (with
   // likely negligible impact on performance)
   this->find_lead_p_candidate();
+
+  // if no proton candidate present, fail the selection and skip to next event 
+  if ( !(sel_has_p_candidate_) ) 
+  {
+    sel_CCNp1pi_ = false;
+    return; 
+  }
 
   // Check the range-based reco momentum for the leading proton candidate
   float lead_p_KE = track_kinetic_energy_p_->at( lead_p_candidate_idx_ );
@@ -1436,10 +1649,10 @@ void AnalysisEvent::apply_selection() {
   // All right, we've applied all selection cuts. Set the flag that indicates
   // whether all were passed (and thus the event is selected as a CCNp0pi
   // candidate)
-  sel_CCNp0pi_ = sel_nu_mu_cc_ && sel_no_reco_showers_
+  sel_CCNp1pi_ = sel_nu_mu_cc_ && sel_no_reco_showers_
     && sel_muon_passed_mom_cuts_ && sel_muon_contained_ && sel_muon_quality_ok_
-    && sel_has_p_candidate_ && sel_passed_proton_pid_cut_
-    && sel_protons_contained_ && sel_lead_p_passed_mom_cuts_;
+    && sel_has_p_candidate_ && sel_min_3_tracks_ && sel_2_non_proton_ && sel_has_pion_candidate_ 
+    && sel_all_pfp_contained_ && sel_lead_p_passed_mom_cuts_ && sel_all_pfp_in_vtx_proximity_;
 }
 
 void AnalysisEvent::find_lead_p_candidate() {
@@ -1451,18 +1664,21 @@ void AnalysisEvent::find_lead_p_candidate() {
     unsigned int generation = pfp_generation_->at( p );
     if ( generation != 2u ) continue;
 
-    // Skip the muon candidate reco track (this function assumes that it has
+    // Skip the muon and pion candidate reco track (this function assumes that it has
     // already been found)
-    if ( p == muon_candidate_idx_ ) continue;
-
+    if ( p == muon_candidate_pid_idx_  || p == pion_candidate_idx_) continue;
+     
     // Skip PFParticles that are shower-like (track scores near 0)
     float track_score = pfp_track_score_->at( p );
+    //if ( track_score <= TRACK_SCORE_CUT ) continue;
     if ( track_score <= TRACK_SCORE_CUT ) continue;
-
-    // All non-muon-candidate reco tracks are considered proton candidates
+    // All non-muon/pion-candidate reco tracks are considered proton candidates
     float track_length = track_length_->at( p );
     if ( track_length <= 0. ) continue;
-
+    
+    // All non-muon/pion-candidate reco tracks are considered proton candidates
+    sel_has_p_candidate_ = true;
+    
     if ( track_length > lead_p_track_length ) {
       lead_p_track_length = track_length;
       lead_p_index = p;
@@ -1528,7 +1744,7 @@ void AnalysisEvent::compute_observables() {
   // usual observables using the longest track as the muon candidate and the
   // second-longest track as the leading proton candidate. This will enable
   // sideband studies of NC backgrounds in the STV phase space.
-  if ( !sel_has_muon_candidate_ ) {
+  /*if ( !sel_has_muon_candidate_ ) {
 
     float max_trk_len = LOW_FLOAT;
     int max_trk_idx = BOGUS_INDEX;
@@ -1563,36 +1779,53 @@ void AnalysisEvent::compute_observables() {
     // If we found at least two usable PFParticles, then assign the indices to
     // be used below
     if ( max_trk_idx != BOGUS_INDEX && next_to_max_trk_idx != BOGUS_INDEX ) {
-      muon_candidate_idx_ = max_trk_idx;
+      muon_candidate_pid_idx_ = max_trk_idx;
       lead_p_candidate_idx_ = next_to_max_trk_idx;
     }
-  }
+  }*/
 
   // Abbreviate some of the calculations below by using these handy
   // references to the muon and leading proton 3-momenta
   auto& p3mu = *p3_mu_;
   auto& p3p = *p3_lead_p_;
+  auto& p3pi = *p3_cpi_;
 
   // Set the reco 3-momentum of the muon candidate if we found one
-  bool muon = muon_candidate_idx_ != BOGUS_INDEX;
+  bool muon = muon_candidate_pid_idx_ != BOGUS_INDEX;
   if ( muon ) {
-    float mu_dirx = track_dirx_->at( muon_candidate_idx_ );
-    float mu_diry = track_diry_->at( muon_candidate_idx_ );
-    float mu_dirz = track_dirz_->at( muon_candidate_idx_ );
+    float mu_dirx = track_dirx_->at( muon_candidate_pid_idx_ );
+    float mu_diry = track_diry_->at( muon_candidate_pid_idx_ );
+    float mu_dirz = track_dirz_->at( muon_candidate_pid_idx_ );
 
     // The selection flag indicating whether the muon candidate is contained
     // was already set when the selection was applied. Use it to choose the
     // best momentum estimator to use.
     float muon_mom = LOW_FLOAT;
     if ( sel_muon_contained_ ) {
-      muon_mom = track_range_mom_mu_->at( muon_candidate_idx_ );
+      muon_mom = track_range_mom_mu_->at( muon_candidate_pid_idx_ );
     }
     else {
-      muon_mom = track_mcs_mom_mu_->at( muon_candidate_idx_ );
+      muon_mom = track_mcs_mom_mu_->at( muon_candidate_pid_idx_ );
     }
 
     p3mu = TVector3( mu_dirx, mu_diry, mu_dirz );
     p3mu = p3mu.Unit() * muon_mom;
+  }
+
+  bool pion = pion_candidate_idx_ != BOGUS_INDEX;
+  if ( pion ) {
+    float pi_dirx = track_dirx_->at( pion_candidate_idx_ );
+    float pi_diry = track_diry_->at( pion_candidate_idx_ );
+    float pi_dirz = track_dirz_->at( pion_candidate_idx_ );
+
+    // The selection flag indicating whether the muon candidate is contained
+    // was already set when the selection was applied. Use it to choose the
+    // best momentum estimator to use.
+    float pion_mom = LOW_FLOAT;
+    pion_mom = track_range_mom_mu_->at( pion_candidate_idx_ );
+    
+    p3pi = TVector3( pi_dirx, pi_diry, pi_dirz );
+    p3pi = p3pi.Unit() * pion_mom;
   }
 
   // Set the reco 3-momentum of the leading proton candidate if we found one
@@ -1614,11 +1847,11 @@ void AnalysisEvent::compute_observables() {
 
   // Set the reco 3-momenta of all proton candidates (i.e., all generation == 2
   // tracks except the muon candidate) assuming we found both a muon candidate
-  // and at least one proton candidate.
-  if ( muon && lead_p ) {
+  // pion candidate and at least one proton candidate.
+  if ( muon && pion && lead_p ) {
     for ( int p = 0; p < num_pf_particles_; ++p ) {
-      // Skip the muon candidate
-      if ( p == muon_candidate_idx_ ) continue;
+      // Skip the muon and pion candidate
+      if ( p == muon_candidate_pid_idx_ || pion_candidate_idx_) continue;
 
       // Only include direct neutrino daughters (generation == 2)
       unsigned int generation = pfp_generation_->at( p );
@@ -1641,7 +1874,7 @@ void AnalysisEvent::compute_observables() {
     // Sort the reco proton 3-momenta in order from highest to lowest magnitude
     std::sort( p3_p_vec_->begin(), p3_p_vec_->end(), [](const TVector3& a,
       const TVector3& b) -> bool { return a.Mag() > b.Mag(); } );
-  }
+  } 
 
   // Compute reco STVs if we have both a muon candidate
   // and a leading proton candidate in the event
@@ -1687,13 +1920,17 @@ void AnalysisEvent::compute_mc_truth_observables() {
 
   // Reset the vector of true MC proton 3-momenta
   mc_p3_p_vec_->clear();
+  mc_p3_cpi_vec_->clear(); 
 
+  int mc_n_protons_temp = 0;
   // Set the true 3-momentum of the leading proton (if there is one)
-  float max_mom = LOW_FLOAT;
+  float max_mom_p = LOW_FLOAT;
   for ( int p = 0; p < num_mc_daughters; ++p ) {
     int pdg = mc_nu_daughter_pdg_->at( p );
     if ( pdg == PROTON )
     {
+
+      mc_n_protons_temp += 1;
       float px = mc_nu_daughter_px_->at( p );
       float py = mc_nu_daughter_py_->at( p );
       float pz = mc_nu_daughter_pz_->at( p );
@@ -1702,9 +1939,29 @@ void AnalysisEvent::compute_mc_truth_observables() {
       mc_p3_p_vec_->push_back( temp_p3 );
 
       float mom = temp_p3.Mag();
-      if ( mom > max_mom ) {
-        max_mom = mom;
+      if ( mom > max_mom_p ) {
+        max_mom_p = mom;
         *mc_p3_lead_p_ = temp_p3;
+      }
+    }
+  }
+
+  mc_n_protons_ = mc_n_protons_temp;
+  // Three mom of leading pion i
+  float max_mom_cpi = LOW_FLOAT;
+  for ( int p = 0; p < num_mc_daughters; ++p){
+    int pdg = mc_nu_daughter_pdg_->at(p);
+    if ( std::abs(pdg) == PI_PLUS ){
+      float px = mc_nu_daughter_px_->at( p );
+      float py = mc_nu_daughter_py_->at( p );
+      float pz = mc_nu_daughter_pz_->at( p );
+      TVector3 temp_p3 = TVector3( px, py, pz );
+
+      mc_p3_cpi_vec_->push_back( temp_p3 );
+      float mom = temp_p3.Mag();
+      if ( mom > max_mom_cpi ) {
+      	max_mom_cpi = mom;
+	*mc_p3_cpi_ = temp_p3;
       }
     }
   }
@@ -1715,13 +1972,22 @@ void AnalysisEvent::compute_mc_truth_observables() {
   std::sort( mc_p3_p_vec_->begin(), mc_p3_p_vec_->end(), [](const TVector3& a,
     const TVector3& b) -> bool { return a.Mag() > b.Mag(); } );
 
+  //mc_n_protons_ = mc_p3_p_vec_.size(); 
   // If the event contains a leading proton, then set the 3-momentum
   // accordingly
-  bool true_lead_p = ( max_mom != LOW_FLOAT );
+  bool true_lead_p = ( max_mom_p != LOW_FLOAT );
   if ( !true_lead_p && mc_is_signal_ ) {
     // If it doesn't for a signal event, then something is wrong.
     std::cout << "WARNING: Missing leading proton in MC signal event!\n";
     return;
+  }
+
+  // Compute angle between muon and pion if event contains a muon and a leading pion
+ 
+  bool true_lead_cpi = ( max_mom_cpi != LOW_FLOAT ); 
+  if (true_muon && true_lead_cpi) {
+    mc_theta_mu_cpi_ = std::acos( mc_p3_mu_->Dot(*mc_p3_cpi_)
+      / mc_p3_mu_->Mag() / mc_p3_cpi_->Mag() );
   }
 
   // Compute true STVs if the event contains both a muon and a leading

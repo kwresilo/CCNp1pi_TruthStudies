@@ -1,0 +1,24 @@
+# NU OVERLAY
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/nu_overlay_run1.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/nu_overlay_run2.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/nu_overlay_run3.roottest.root
+
+# NUE OVERLAY
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/intrinsic_nue_overlay_run1.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/intrinsic_nue_overlay_run2.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/intrinsic_nue_overlay_run3.roottest.root
+
+# DIRT
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/dirt_overlay_run1.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/dirt_overlay_run2.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/dirt_overlay_run3.roottest.root
+
+# EXT
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/ext_run1.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/ext_run2.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/ext_run3.roottest.root
+
+# BEAM ON
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/beam_on_run1.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/beam_on_run2.roottest.root
+/uboone/data/users/kwresilo/CCNp1pi/data/newPeLEE/beam_on_run3.roottest.root

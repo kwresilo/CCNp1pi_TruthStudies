@@ -13,32 +13,35 @@ enum EventCategory {
   kSignalCCQE = 1,
   kSignalCCMEC = 2,
   kSignalCCRES = 3,
-  kSignalOther = 4,
+  kSignalCCDIS = 4, 
+  kSignalCCCOH = 5,
+  kSignalOther = 6,
 
-  // True numu CC event with at least one final-state pion above threshold
-  kNuMuCCNpi = 5,
+  // True numu CC event with pi0s
+  kNuMuCCpi0 = 7,
 
-  // True numu CC event with zero final-state pions above threshold and
-  // zero final-state protons above threshold
-  kNuMuCC0pi0p = 6,
+  // True numu CC event with no final-state pions above threshold and
+  // at least one proton above threshold
+  kNuMuCC0piXp = 8,
+
 
   // Any true numu CC event which does not satisfy the criteria for inclusion
   // in one of the other categories above
-  kNuMuCCOther = 7,
+  kNuMuCCOther = 9,
 
   // True nue CC event
-  kNuECC = 8,
+  kNuECC = 10,
 
   // True neutral current event for any neutrino flavor
-  kNC = 9,
+  kNC = 11,
 
   // True neutrino vertex (any reaction mode and flavor combination) is outside
   // of the fiducial volume
-  kOOFV = 10,
+  kOOFV = 12,
 
   // All events that do not fall within any of the other categories (e.g.,
   // numubar CC)
-  kOther = 11
+  kOther = 13
 
 };
 
@@ -129,13 +132,15 @@ class EventCategoryInterpreter {
       { kSignalCCQE, "Signal (CCQE)" },
       { kSignalCCMEC, "Signal (CCMEC)" },
       { kSignalCCRES, "Signal (CCRES)" },
+      { kSignalCCDIS, "Signal (CCDIS)" },
+      { kSignalCCCOH, "Signal (CCCOH)" },
       { kSignalOther, "Signal (Other)" },
-      { kNuMuCCNpi, "#nu_{#mu} CCN#pi" },
-      { kNuMuCC0pi0p, "#nu_{#mu} CC0#pi0p" },
+      { kNuMuCCpi0, "#nu_{#mu} CCN#pi#^0" },
+      { kNuMuCC0piXp, "#nu_{#mu} CC0#piNp" },
       { kNuMuCCOther, "Other #nu_{#mu} CC" },
       { kNuECC, "#nu_{e} CC" },
       { kNC, "NC" },
-      { kOOFV, "Out FV" },
+      { kOOFV, "OOFV" },
       { kOther, "Other" }
     };
 
@@ -144,10 +149,12 @@ class EventCategoryInterpreter {
       { kSignalCCQE, kGreen },
       { kSignalCCMEC, kGreen + 1 },
       { kSignalCCRES, kGreen + 2 },
-      { kSignalOther, kGreen + 3 },
-      { kNuMuCCNpi, kAzure - 2 },
-      { kNuMuCC0pi0p, kAzure - 1 },
-      { kNuMuCCOther, kAzure },
+      { kSignalCCDIS, kGreen + 3},
+      { kSignalCCCOH, kGreen + 4}, 
+      { kSignalOther, kGreen + 5 },
+      { kNuMuCCpi0, kAzure - 2 },
+      { kNuMuCC0piXp, kAzure - 1 }, 
+      { kNuMuCCOther, kAzure + 3 },
       { kNuECC, kViolet },
       { kNC, kOrange },
       { kOOFV, kRed + 3 },
