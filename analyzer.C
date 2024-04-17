@@ -74,6 +74,20 @@ bool is_meson_or_antimeson( int pdg_code ) {
   return true;
 }
 
+// constants needed for multi-plane Bragg calculations
+const float floatMinValue = -340282346638528859811704183484516925440.000000f;
+const auto sin2AngleThreshold = 0.175f;
+const auto piBy3 = std::acos(0.5f);
+const auto lengthFraction = 0.333333333f;
+const auto nHitsToSkip = 3;
+
+// pion momentum calibration
+constexpr float a = 1.6353;
+constexpr float b = 0.0022385;
+constexpr float c = 1.5668;
+constexpr float d = 0.013327;
+
+
 // A few helpful dummy constants
 constexpr float BOGUS = 9999.;
 constexpr int BOGUS_INT = 9999;
@@ -93,7 +107,7 @@ constexpr int TAU_NEUTRINO = 16;
 constexpr int PROTON = 2212;
 constexpr int PI_ZERO = 111;
 constexpr int PI_PLUS = 211;
-
+constexpr int NEUTRON = 2112;
 // Values of parameters to use in analysis cuts
 constexpr float DEFAULT_PROTON_PID_CUT = 0.2;
 constexpr float LEAD_P_MIN_MOM_CUT = 0.300; // GeV/c
@@ -113,7 +127,7 @@ constexpr float MUON_PID_CUT = 0.2;
 
 constexpr float TRACK_SCORE_CUT = 0.5;
 
-constexpr float PROTON_BDT_CUT = 0.0;
+constexpr float PROTON_BDT_CUT = 0.01;
 constexpr float MUON_BDT_CUT = 0.0;
 constexpr float TOPO_SCORE_CUT_2 = 0.67; 
 constexpr float PFP_DISTANCE_CUT = 9.5; 
@@ -160,7 +174,8 @@ constexpr double PI_PLUS_MASS = 0.13957000; // GeV
 // listed for 40Ar in Table II of arXiv:1609.03530. MINERvA uses an identical
 // procedure for 12C to obtain the binding energy value of 27.13 MeV, which is
 // adopted in their STV analysis described in arXiv:1910.08658.
-constexpr double BINDING_ENERGY = 0.02478; // 40Ar, GeV
+constexpr double BINDING_ENERGY = 0.34381; // 40Ar, GeV
+constexpr double MEAN_EXCITATION_ENERGY = 0.0309; 
 
 // Class used to hold information from the searchingfornues TTree branches and
 // process it for our analysis
@@ -174,6 +189,7 @@ class AnalysisEvent {
 
     EventCategory categorize_event();
     void apply_selection();
+    void get_multi_plane_Bragg_likelihood();
     void apply_numu_CC_selection();
     void find_pion_candidate();
     void find_muon_candidate(); 
@@ -189,6 +205,7 @@ class AnalysisEvent {
     float nu_completeness_from_pfp_ = BOGUS;
     float nu_purity_from_pfp_ = BOGUS;
 
+      
     // Reco PDG code of the neutrino candidate
     int nu_pdg_ = BOGUS_INT;
 
@@ -280,6 +297,106 @@ class AnalysisEvent {
     // on the interval [-1, 1]
     MyPointer< std::vector<float> > track_llr_pid_score_;
 
+    // Golden pion handles
+    MyPointer< std::vector<float> > mc_end_p_;
+    MyPointer< std::vector<int> > mc_n_inelastic_;
+    MyPointer< std::vector<int> > mc_n_elastic_;
+    
+    MyPointer< std::vector<int> > pfp_n_descendents_;
+    MyPointer< std::vector<int> > trk_end_spacepoints_;
+    MyPointer< std::vector<float> > trk_avg_deflection_stdev_;
+   
+    // Calo features, 3-plane Bragg
+
+    MyPointer< std::vector<float> > bragg_mip_uvw_;
+
+    MyPointer< std::vector<float> > bragg_p_fwd_uvw_;
+    MyPointer< std::vector<float> > bragg_p_bwd_uvw_;
+    MyPointer< std::vector<float> > bragg_p_to_MIP_;
+    MyPointer< std::vector<float> > bragg_p_fwd_2_bwd_;
+
+    MyPointer< std::vector<float> > bragg_pion_fwd_uvw_;
+    MyPointer< std::vector<float> > bragg_pion_bwd_uvw_;
+    MyPointer< std::vector<float> > bragg_pion_to_MIP_;
+    MyPointer< std::vector<float> > bragg_pion_fwd_2_bwd_;
+
+    MyPointer< std::vector<float> > bragg_mu_fwd_uvw_;
+    MyPointer< std::vector<float> > bragg_mu_bwd_uvw_;
+
+    MyPointer< std::vector<float> > truncated_mean_dEdx_;
+
+    // Calo feature single plane Bragg
+    
+    MyPointer< std::vector<float> > trk_trunk_dEdx_w_;
+    MyPointer< std::vector<float> > trk_trunk_dEdx_u_;
+    MyPointer< std::vector<float> > trk_trunk_dEdx_v_;
+
+    MyPointer< std::vector<float> > bragg_p_fwd_w_;
+    MyPointer< std::vector<float> > bragg_p_bwd_w_;
+    
+    MyPointer< std::vector<float> > bragg_mu_fwd_w_;
+    MyPointer< std::vector<float> > bragg_mu_bwd_w_;
+
+    MyPointer< std::vector<float> > bragg_pion_fwd_w_;
+    MyPointer< std::vector<float> > bragg_pion_bwd_w_;
+
+    MyPointer< std::vector<float> > bragg_p_fwd_v_;
+    MyPointer< std::vector<float> > bragg_p_bwd_v_;
+
+    MyPointer< std::vector<float> > bragg_mu_fwd_v_;
+    MyPointer< std::vector<float> > bragg_mu_bwd_v_;
+
+    MyPointer< std::vector<float> > bragg_pion_fwd_v_;
+    MyPointer< std::vector<float> > bragg_pion_bwd_v_;
+
+    MyPointer< std::vector<float> > bragg_p_fwd_u_;
+    MyPointer< std::vector<float> > bragg_p_bwd_u_;
+
+    MyPointer< std::vector<float> > bragg_mu_fwd_u_;
+    MyPointer< std::vector<float> > bragg_mu_bwd_u_;
+
+    MyPointer< std::vector<float> > bragg_pion_fwd_u_;
+    MyPointer< std::vector<float> > bragg_pion_bwd_u_;
+
+    MyPointer< std::vector<bool> > trk_bragg_p_fwd_preferred_w_;
+    MyPointer< std::vector<float> > trk_bragg_p_w_;
+    MyPointer< std::vector<float> > trk_bragg_p_alt_dir_w_;
+    
+    MyPointer< std::vector<bool> > trk_bragg_pion_fwd_preferred_w_;
+    MyPointer< std::vector<float> > trk_bragg_pion_w_;
+    MyPointer< std::vector<float> > trk_bragg_pion_alt_dir_w_;
+
+    MyPointer< std::vector<bool> > trk_bragg_mu_fwd_preferred_w_;
+    MyPointer< std::vector<float> > trk_bragg_mu_w_;
+    MyPointer< std::vector<float> > trk_bragg_mu_alt_dir_w_;
+
+    MyPointer< std::vector<bool> > trk_bragg_p_fwd_preferred_u_;
+    MyPointer< std::vector<float> > trk_bragg_p_u_;
+    MyPointer< std::vector<float> > trk_bragg_p_alt_dir_u_;
+
+    MyPointer< std::vector<bool> > trk_bragg_pion_fwd_preferred_u_;
+    MyPointer< std::vector<float> > trk_bragg_pion_u_;
+    MyPointer< std::vector<float> > trk_bragg_pion_alt_dir_u_;
+
+    MyPointer< std::vector<bool> > trk_bragg_mu_fwd_preferred_u_;
+    MyPointer< std::vector<float> > trk_bragg_mu_u_;
+    MyPointer< std::vector<float> > trk_bragg_mu_alt_dir_u_;
+ 
+    MyPointer< std::vector<bool> > trk_bragg_p_fwd_preferred_v_;
+    MyPointer< std::vector<float> > trk_bragg_p_v_;
+    MyPointer< std::vector<float> > trk_bragg_p_alt_dir_v_;
+
+    MyPointer< std::vector<bool> > trk_bragg_pion_fwd_preferred_v_;
+    MyPointer< std::vector<float> > trk_bragg_pion_v_;
+    MyPointer< std::vector<float> > trk_bragg_pion_alt_dir_v_;
+
+    MyPointer< std::vector<bool> > trk_bragg_mu_fwd_preferred_v_;
+    MyPointer< std::vector<float> > trk_bragg_mu_v_;
+    MyPointer< std::vector<float> > trk_bragg_mu_alt_dir_v_;
+
+    MyPointer< std::vector<float> > bragg_mip_w_;
+    MyPointer< std::vector<float> > bragg_mip_v_;
+    MyPointer< std::vector<float> > bragg_mip_u_;
     // True neutrino PDG code
     int mc_nu_pdg_ = BOGUS_INT;
 
@@ -315,6 +432,8 @@ class AnalysisEvent {
     float spline_weight_ = DEFAULT_WEIGHT;
     float tuned_cv_weight_ = DEFAULT_WEIGHT;
 
+    bool mc_golden_ = false;
+    bool mc_pi_stopping_ = false;
     // Signal definition requirements
     bool is_mc_ = false;
     bool mc_neutrino_is_numu_ = false;
@@ -323,7 +442,7 @@ class AnalysisEvent {
     bool mc_lead_p_in_mom_range_ = false;
     bool mc_no_fs_mesons_ = false;
     bool mc_1cpi_= false;
-    
+    bool mc_no_neutrons_ = true;  
     // Intersection of all of these requirements
     bool mc_is_signal_ = false;
 
@@ -423,15 +542,34 @@ class AnalysisEvent {
     MyPointer< std::vector<TVector3> > p3_p_vec_;
 
     // Reco STVs and other variables of interest
-    float delta_pT_ = BOGUS;
-    float delta_phiT_ = BOGUS;
-    float delta_alphaT_ = BOGUS;
-    float delta_pL_ = BOGUS;
-    float pn_ = BOGUS;
-    float delta_pTx_ = BOGUS;
-    float delta_pTy_ = BOGUS;
-    float theta_mu_p_ = BOGUS;
+   
+    // Longitudinal particle momenta
+    float muE_ = BOGUS;
+    float pE_ = BOGUS;
+    float piE_ = BOGUS;
+ 
+    float reco_Ecal_ = BOGUS;
+    float pKE_ = BOGUS;
 
+    MyPointer< TVector3 > q_ ; 
+
+    float delta_pT_ = BOGUS;
+    //float delta_phiT_ = BOGUS;
+    //float delta_alphaT_ = BOGUS;
+    float delta_pL_ = BOGUS;
+    float delta_pL2_ = BOGUS;
+    float pn_ = BOGUS;
+    float pn2_ = BOGUS;
+    //float delta_pTx_ = BOGUS;
+    //float delta_pTy_ = BOGUS;
+    float theta_mu_p_ = BOGUS;
+    float theta_mu_cpi_ = BOGUS;
+    
+    float delta_alpha3D_ = BOGUS;
+    float delta_phi3d_had_ = BOGUS;
+    float delta_phi3d_mu_ = BOGUS;
+    float delta_phi3d_p_ = BOGUS;
+    float delta_phi3d_pi_ = BOGUS;
     // ** MC truth observables **
     // These are loaded for signal events whenever we have MC information
     // to use
@@ -449,15 +587,32 @@ class AnalysisEvent {
     MyPointer< std::vector<TVector3> > mc_p3_cpi_vec_;
     int mc_n_cpi_ = 0; 
     // MC truth STVs and other variables of interest
+    float mc_muE_ = BOGUS;
+    float mc_pE_ = BOGUS;
+    float mc_piE_ = BOGUS;
+
+    float mc_Ecal_ = BOGUS;
+    float mc_pKE_ = BOGUS;
+
+    MyPointer< TVector3 > mc_q_;
+
     float mc_delta_pT_ = BOGUS;
-    float mc_delta_phiT_ = BOGUS;
-    float mc_delta_alphaT_ = BOGUS;
+    //float mc_delta_phiT_ = BOGUS;
+    //float mc_delta_alphaT_ = BOGUS;
     float mc_delta_pL_ = BOGUS;
+    float mc_delta_pL2_ = BOGUS;
     float mc_pn_ = BOGUS;
-    float mc_delta_pTx_ = BOGUS;
-    float mc_delta_pTy_ = BOGUS;
+    float mc_pn2_ = BOGUS;
+    //float mc_delta_pTx_ = BOGUS;
+    //float mc_delta_pTy_ = BOGUS;
     float mc_theta_mu_p_ = BOGUS;
     float mc_theta_mu_cpi_ = BOGUS;
+
+    float mc_delta_alpha3D_ = BOGUS;
+    float mc_delta_phi3d_had_ = BOGUS;
+    float mc_delta_phi3d_mu_ = BOGUS;
+    float mc_delta_phi3d_p_ = BOGUS;
+    float mc_delta_phi3d_pi_ = BOGUS;
 
     bool reco_vertex_inside_FV() {
       return point_inside_FV( nu_vx_, nu_vy_, nu_vz_ );
@@ -480,6 +635,59 @@ class AnalysisEvent {
 // from the Event TTree
 void set_event_branch_addresses(TTree& etree, AnalysisEvent& ev)
 {
+  // variables for identifying golden pion
+  set_object_input_branch_address( etree, "mc_end_p", ev.mc_end_p_ );
+  set_object_input_branch_address( etree, "mc_n_elastic", ev.mc_n_elastic_);
+  set_object_input_branch_address( etree, "mc_n_inelastic", ev.mc_n_inelastic_);
+
+  set_object_input_branch_address( etree, "pfp_n_descendents_v", ev.pfp_n_descendents_);
+  set_object_input_branch_address( etree, "trk_end_spacepoints_v", ev.trk_end_spacepoints_);
+  set_object_input_branch_address( etree, "trk_avg_deflection_stdev_v", ev.trk_avg_deflection_stdev_);
+
+  set_object_input_branch_address( etree, "trk_trunk_rr_dEdx_y_v", ev.trk_trunk_dEdx_w_);
+  set_object_input_branch_address( etree, "trk_trunk_rr_dEdx_u_v", ev.trk_trunk_dEdx_u_);
+  set_object_input_branch_address( etree, "trk_trunk_rr_dEdx_v_v", ev.trk_trunk_dEdx_v_);
+
+  set_object_input_branch_address( etree, "trk_bragg_p_fwd_preferred_v", ev.trk_bragg_p_fwd_preferred_w_);
+  set_object_input_branch_address( etree, "trk_bragg_p_v", ev.trk_bragg_p_w_);
+  set_object_input_branch_address( etree, "trk_bragg_p_alt_dir_v", ev.trk_bragg_p_alt_dir_w_);
+  
+  set_object_input_branch_address( etree, "trk_bragg_mu_fwd_preferred_v", ev.trk_bragg_mu_fwd_preferred_w_);
+  set_object_input_branch_address( etree, "trk_bragg_mu_v", ev.trk_bragg_mu_w_);
+  set_object_input_branch_address( etree, "trk_bragg_mu_alt_dir_v", ev.trk_bragg_mu_alt_dir_w_);
+
+  set_object_input_branch_address( etree, "trk_bragg_pion_fwd_preferred_v", ev.trk_bragg_pion_fwd_preferred_w_);
+  set_object_input_branch_address( etree, "trk_bragg_pion_v", ev.trk_bragg_pion_w_);
+  set_object_input_branch_address( etree, "trk_bragg_pion_alt_dir_v", ev.trk_bragg_pion_alt_dir_w_);
+
+  set_object_input_branch_address( etree, "trk_bragg_p_fwd_preferred_u_v", ev.trk_bragg_p_fwd_preferred_u_);
+  set_object_input_branch_address( etree, "trk_bragg_p_u_v", ev.trk_bragg_p_u_);
+  set_object_input_branch_address( etree, "trk_bragg_p_alt_dir_u_v", ev.trk_bragg_p_alt_dir_u_);
+
+  set_object_input_branch_address( etree, "trk_bragg_mu_fwd_preferred_u_v", ev.trk_bragg_mu_fwd_preferred_u_);
+  set_object_input_branch_address( etree, "trk_bragg_mu_u_v", ev.trk_bragg_mu_u_);
+  set_object_input_branch_address( etree, "trk_bragg_mu_alt_dir_u_v", ev.trk_bragg_mu_alt_dir_u_);
+
+  set_object_input_branch_address( etree, "trk_bragg_pion_fwd_preferred_u_v", ev.trk_bragg_pion_fwd_preferred_u_);
+  set_object_input_branch_address( etree, "trk_bragg_pion_u_v", ev.trk_bragg_pion_u_);
+  set_object_input_branch_address( etree, "trk_bragg_pion_alt_dir_u_v", ev.trk_bragg_pion_alt_dir_u_);
+
+  set_object_input_branch_address( etree, "trk_bragg_p_fwd_preferred_v_v", ev.trk_bragg_p_fwd_preferred_v_);
+  set_object_input_branch_address( etree, "trk_bragg_p_v_v", ev.trk_bragg_p_v_);
+  set_object_input_branch_address( etree, "trk_bragg_p_alt_dir_v_v", ev.trk_bragg_p_alt_dir_v_);
+
+  set_object_input_branch_address( etree, "trk_bragg_mu_fwd_preferred_v_v", ev.trk_bragg_mu_fwd_preferred_v_);
+  set_object_input_branch_address( etree, "trk_bragg_mu_v_v", ev.trk_bragg_mu_v_);
+  set_object_input_branch_address( etree, "trk_bragg_mu_alt_dir_v_v", ev.trk_bragg_mu_alt_dir_v_);
+
+  set_object_input_branch_address( etree, "trk_bragg_pion_fwd_preferred_v_v", ev.trk_bragg_pion_fwd_preferred_v_);
+  set_object_input_branch_address( etree, "trk_bragg_pion_v_v", ev.trk_bragg_pion_v_);
+  set_object_input_branch_address( etree, "trk_bragg_pion_alt_dir_v_v", ev.trk_bragg_pion_alt_dir_v_);
+  
+  set_object_input_branch_address( etree, "trk_bragg_mip_v", ev.bragg_mip_w_);
+  set_object_input_branch_address( etree, "trk_bragg_mip_v_v", ev.bragg_mip_v_);
+  set_object_input_branch_address( etree, "trk_bragg_mip_u_v", ev.bragg_mip_u_); 
+
   // Reco PDG code of primary PFParticle in slice (i.e., the neutrino
   // candidate)
   etree.SetBranchAddress( "slpdg", &ev.nu_pdg_ );
@@ -662,6 +870,8 @@ void set_event_branch_addresses(TTree& etree, AnalysisEvent& ev)
 void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
   bool create = false)
 {
+  set_output_branch_address( out_tree, "is_mc", &ev.mc_pi_stopping_, create, "mc_pi_stopping/O" );
+  set_output_branch_address( out_tree, "is_mc", &ev.mc_golden_, create, "mc_golden/O" );
   // Signal definition flags
   set_output_branch_address( out_tree, "is_mc", &ev.is_mc_, create, "is_mc/O" );
 
@@ -693,7 +903,8 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
   set_output_branch_address( out_tree, "mc_1cpi",
     &ev.mc_1cpi_, create, "mc_1cpi/O" );
 
-
+  set_output_branch_address( out_tree, "mc_1cpi",
+    &ev.mc_no_neutrons_, create, "mc_no_neutrons/O" );
   // MC event category
   set_output_branch_address( out_tree, "category",
     &ev.category_, create, "category/I" );
@@ -726,6 +937,7 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
     }
   }
 
+  
   // Backtracked neutrino purity and completeness
   set_output_branch_address( out_tree, "nu_completeness_from_pfp",
     &ev.nu_completeness_from_pfp_, create, "nu_completeness_from_pfp/F" );
@@ -824,6 +1036,137 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
   set_output_branch_address( out_tree,
     "n_reco_tracks", &ev.n_reco_tracks_, create, "n_reco_tracks/I" );
 
+  //Golden pion handles
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "mc_end_p", ev.mc_end_p_, create );
+
+  set_object_output_branch_address< std::vector<int> >( out_tree,
+    "mc_n_elastic", ev.mc_n_elastic_, create );
+
+  set_object_output_branch_address< std::vector<int> >( out_tree,
+    "mc_n_inelastic", ev.mc_n_inelastic_, create );
+
+  set_object_output_branch_address< std::vector<int> > ( out_tree,
+    "pfp_n_descendents", ev.pfp_n_descendents_, create );
+
+  set_object_output_branch_address< std::vector<int> > ( out_tree,
+    "pfp_n_spacepoints", ev.trk_end_spacepoints_, create );
+   
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "trk_avg_deflection_stdev", ev.trk_avg_deflection_stdev_, create );
+ 
+  // mutiplane bragg likelihoods
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mip_uvw", ev.bragg_mip_uvw_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_fwd_uvw", ev.bragg_p_fwd_uvw_, create);
+  
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_bwd_uvw", ev.bragg_p_bwd_uvw_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_to_MIP", ev.bragg_p_to_MIP_, create);
+ 
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_fwd_2_bwd", ev.bragg_p_fwd_2_bwd_, create); 
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_fwd_uvw", ev.bragg_pion_fwd_uvw_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_bwd_uvw", ev.bragg_pion_bwd_uvw_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_to_MIP", ev.bragg_pion_to_MIP_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_fwd_2_bwd", ev.bragg_pion_fwd_2_bwd_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_fwd_uvw", ev.bragg_mu_fwd_uvw_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_bwd_uvw", ev.bragg_mu_bwd_uvw_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "truncated_mean_dEdx", ev.truncated_mean_dEdx_, create);
+
+  // single plane bragg likelihoods
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "trk_trunk_dEdx_w", ev.trk_trunk_dEdx_w_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "trk_trunk_dEdx_u", ev.trk_trunk_dEdx_u_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "trk_trunk_dEdx_v", ev.trk_trunk_dEdx_v_, create);
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_fwd_w", ev.bragg_pion_fwd_w_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_fwd_u", ev.bragg_pion_fwd_u_, create );
+  
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_fwd_v", ev.bragg_pion_fwd_v_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_fwd_w", ev.bragg_mu_fwd_w_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_fwd_u", ev.bragg_mu_fwd_u_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_fwd_v", ev.bragg_mu_fwd_v_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_fwd_w", ev.bragg_p_fwd_w_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_fwd_u", ev.bragg_p_fwd_u_, create );
+ 
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_fwd_v", ev.bragg_p_fwd_v_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_bwd_w", ev.bragg_pion_bwd_w_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_bwd_u", ev.bragg_pion_bwd_u_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_pion_bwd_v", ev.bragg_pion_bwd_v_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_bwd_w", ev.bragg_mu_bwd_w_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_bwd_u", ev.bragg_mu_bwd_u_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mu_bwd_v", ev.bragg_mu_bwd_v_, create );
+ 
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_bwd_w", ev.bragg_p_bwd_w_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_bwd_u", ev.bragg_p_bwd_u_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_p_bwd_v", ev.bragg_p_bwd_v_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mip_w", ev.bragg_mip_w_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mip_v", ev.bragg_mip_v_, create );
+
+  set_object_output_branch_address< std::vector<float> >( out_tree,
+    "bragg_mip_u", ev.bragg_mip_u_, create );
+  
   // BDT scores
   set_object_output_branch_address< std::vector<float> >( out_tree,
     "muon_BDT_score", ev.muon_BDT_score_, create );
@@ -867,58 +1210,125 @@ void set_event_output_branch_addresses(TTree& out_tree, AnalysisEvent& ev,
   set_output_branch_address( out_tree, "mc_n_cpi",
       &ev.mc_n_cpi_, create, "n_cpi/I" );
   // Reco STVs
+  set_output_branch_address( out_tree, "muE",
+    &ev.muE_, create, "muE/F" );
+
+  set_output_branch_address( out_tree, "pE",
+    &ev.pE_, create, "pE/F" );
+
+  set_output_branch_address( out_tree, "piE",
+    &ev.piE_, create, "piE/F" );
+
+  set_output_branch_address( out_tree, "reco_Ecal",
+    &ev.reco_Ecal_, create, "reco_Ecal/F" );
+
+  set_output_branch_address( out_tree, "pKE",
+    &ev.pKE_, create, "pKE/F" );
+  
+  set_object_output_branch_address< TVector3 >( out_tree, "q", ev.q_, create ); 
+
   set_output_branch_address( out_tree, "delta_pT",
     &ev.delta_pT_, create, "delta_pT/F" );
-
-  set_output_branch_address( out_tree, "delta_phiT",
-    &ev.delta_phiT_, create, "delta_phiT/F" );
-
-  set_output_branch_address( out_tree, "delta_alphaT",
-    &ev.delta_alphaT_, create, "delta_alphaT/F" );
-
+  
   set_output_branch_address( out_tree, "delta_pL",
     &ev.delta_pL_, create, "delta_pL/F" );
+
+   set_output_branch_address( out_tree, "delta_pL2",
+    &ev.delta_pL2_, create, "delta_pL2/F" );
 
   set_output_branch_address( out_tree, "pn",
     &ev.pn_, create, "pn/F" );
 
-  set_output_branch_address( out_tree, "delta_pTx",
-    &ev.delta_pTx_, create, "delta_pTx/F" );
-
-  set_output_branch_address( out_tree, "delta_pTy",
-    &ev.delta_pTy_, create, "delta_pTy/F" );
+  set_output_branch_address( out_tree, "pn2",
+    &ev.pn2_, create, "pn2/F" );
 
   set_output_branch_address( out_tree, "theta_mu_p",
     &ev.theta_mu_p_, create, "theta_mu_p/F" );
 
+  set_output_branch_address( out_tree, "theta_mu_cpi",
+    &ev.theta_mu_cpi_, create, "theta_mu_cpi/F" );
+
+  set_output_branch_address( out_tree, "delta_alpha3D",
+    &ev.delta_alpha3D_, create, "delta_alpha3D/F" );
+
+  set_output_branch_address( out_tree, "delta_phi3d_had",
+    &ev.delta_phi3d_had_, create, "delta_phi3d_had/F" );
+
+
+  set_output_branch_address( out_tree, "delta_phi3d_mu",
+    &ev.delta_phi3d_mu_, create, "delta_phi3d_mu/F" );
+ 
+  set_output_branch_address( out_tree, "delta_phi3d_p",
+    &ev.delta_phi3d_p_, create, "delta_phi3d_p/F" );
+
+  set_output_branch_address( out_tree, "delta_phi3d_pi",
+    &ev.delta_phi3d_pi_, create, "delta_phi3d_pi/F" ); 
   // MC STVs (only filled for signal events)
+  set_output_branch_address( out_tree, "mc_muE",
+    &ev.mc_muE_, create, "mc_muE/F" );
+
+  set_output_branch_address( out_tree, "mc_pE",
+    &ev.mc_pE_, create, "mc_pE/F" );
+
+  set_output_branch_address( out_tree, "mc_piE",
+    &ev.mc_piE_, create, "mc_piE/F" );
+
+  set_output_branch_address( out_tree, "mc_Ecal",
+    &ev.mc_Ecal_, create, "mc_Ecal/F" );
+
+  set_output_branch_address( out_tree, "mc_pKE",
+    &ev.mc_pKE_, create, "mc_pKE/F" );
+
+  set_object_output_branch_address< TVector3 >( out_tree,
+    "mc_q", ev.mc_q_, create );
+
   set_output_branch_address( out_tree, "mc_delta_pT",
     &ev.mc_delta_pT_, create, "mc_delta_pT/F" );
 
-  set_output_branch_address( out_tree, "mc_delta_phiT",
-    &ev.mc_delta_phiT_, create, "mc_delta_phiT/F" );
+  //set_output_branch_address( out_tree, "mc_delta_phiT",
+    //&ev.mc_delta_phiT_, create, "mc_delta_phiT/F" );
 
-  set_output_branch_address( out_tree, "mc_delta_alphaT",
-    &ev.mc_delta_alphaT_, create, "mc_delta_alphaT/F" );
+  //set_output_branch_address( out_tree, "mc_delta_alphaT",
+    //&ev.mc_delta_alphaT_, create, "mc_delta_alphaT/F" );
 
   set_output_branch_address( out_tree, "mc_delta_pL",
-    &ev.mc_delta_pL_, create, "mc_delta_pL/F" );
+    &ev.mc_delta_pL2_, create, "mc_delta_pL/F" );
+
+  set_output_branch_address( out_tree, "mc_delta_pL2",
+    &ev.mc_delta_pL_, create, "mc_delta_pL2/F" );
 
   set_output_branch_address( out_tree, "mc_pn",
     &ev.mc_pn_, create, "mc_pn/F" );
 
-  set_output_branch_address( out_tree, "mc_delta_pTx",
-    &ev.mc_delta_pTx_, create, "mc_delta_pTx/F" );
+  set_output_branch_address( out_tree, "mc_pn2",
+    &ev.mc_pn2_, create, "mc_pn2/F" );
 
-  set_output_branch_address( out_tree, "mc_delta_pTy",
-    &ev.mc_delta_pTy_, create, "mc_delta_pTy/F" );
+  //set_output_branch_address( out_tree, "mc_delta_pTx",
+    //&ev.mc_delta_pTx_, create, "mc_delta_pTx/F" );
+
+  //set_output_branch_address( out_tree, "mc_delta_pTy",
+    //&ev.mc_delta_pTy_, create, "mc_delta_pTy/F" );
 
   set_output_branch_address( out_tree, "mc_theta_mu_p",
     &ev.mc_theta_mu_p_, create, "mc_theta_mu_p/F" );
 
   set_output_branch_address( out_tree, "mc_theta_mu_cpi",
     &ev.mc_theta_mu_cpi_, create, "mc_theta_mu_cpi/F" );
+  
+  set_output_branch_address( out_tree, "mc_delta_alpha3D",
+    &ev.mc_delta_alpha3D_, create, "mc_delta_alpha3D/F" );
 
+  set_output_branch_address( out_tree, "mc_delta_phi3d_had",
+    &ev.mc_delta_phi3d_had_, create, "mc_delta_phi3d_had/F" );
+
+
+  set_output_branch_address( out_tree, "mc_delta_phi3d_mu",
+    &ev.mc_delta_phi3d_mu_, create, "mc_delta_phi3d_mu/F" );
+
+  set_output_branch_address( out_tree, "mc_delta_phi3d_p",
+    &ev.mc_delta_phi3d_p_, create, "mc_delta_phi3d_p/F" );
+  set_output_branch_address( out_tree, "mc_delta_phi3d_pi",
+    &ev.mc_delta_phi3d_pi_, create, "mc_delta_phi3d_pi/F" );
   // *** Branches copied directly from the input ***
 
   // Cosmic rejection parameters for numu CC inclusive selection
@@ -1154,7 +1564,7 @@ void analyze(const std::vector<std::string>& in_file_names,
   bool created_output_branches = false;
   long events_entry = 0;
   while ( true ) {
-    //if (events_entry == 100000) break;
+    //if (events_entry == 100) break;
 
     if ( events_entry % 1000 == 0 ) {
       std::cout << "Processing event #" << events_entry << '\n';
@@ -1246,8 +1656,10 @@ EventCategory AnalysisEvent::categorize_event() {
   mc_no_charged_pi_above_threshold_ = true;
   mc_no_fs_mesons_ = true;
   mc_1cpi_ = false;
+  mc_no_neutrons_ = true;
+  mc_pi_stopping_ = false;
+  mc_golden_ = false;
 
-  
   double lead_p_mom = LOW_FLOAT;
   double lead_cpi_mom = LOW_FLOAT; //K
 
@@ -1262,6 +1674,9 @@ EventCategory AnalysisEvent::categorize_event() {
       mc_no_fs_mesons_ = false;
     }
 
+    if (pdg == NEUTRON) {
+       mc_no_neutrons_ = false;
+    }
 
     // Check that the muon has a momentum within the allowed range
     if ( pdg == MUON ) {
@@ -1280,7 +1695,13 @@ EventCategory AnalysisEvent::categorize_event() {
     }
     // check charged pion above threshold present
     else if ( std::abs(pdg) == PI_PLUS ) {
-      double mom = real_sqrt( std::pow(energy, 2) - std::pow(PI_PLUS_MASS, 2) );
+      // check if golden
+      mc_pi_stopping_ = ( mc_end_p_->at(p) <= std::numeric_limits<float>::epsilon() );
+      int n_scatters = mc_n_elastic_->at(p) + mc_n_inelastic_->at(p);
+
+      mc_golden_ = (mc_pi_stopping_ && n_scatters == 0);
+
+      double mom = real_sqrt( std::pow(energy, 2) - std::pow(PI_PLUS_MASS, 2) );     
       if ( mom > CHARGED_PI_MOM_CUT ) {
         mc_no_charged_pi_above_threshold_ = false;
 	mc_n_cpi_ += 1;
@@ -1337,6 +1758,185 @@ EventCategory AnalysisEvent::categorize_event() {
   //}
   else return kNuMuCCOther;
 }
+
+float compute_multi_plane_Bragg_likelihood(float &likelihood_w, float &likelihood_u, float &likelihood_v, float yz_angle, int n_hits_u, int n_hits_v){
+
+  bool trackAlongW = ( (std::pow(std::sin(yz_angle), 2) < sin2AngleThreshold ));
+  
+  bool hasW = (!(trackAlongW) && likelihood_w >= -1.f);
+
+  if (hasW) return likelihood_w; 
+  
+
+  bool trackAlongU = ( (std::pow( std::sin(yz_angle - piBy3),2 ) < sin2AngleThreshold));
+  bool trackAlongV = ( (std::pow( std::sin(yz_angle + piBy3),2 ) < sin2AngleThreshold));
+
+  bool hasU = (!(trackAlongU) && likelihood_u >= -1.f);
+  bool hasV = (!(trackAlongV) && likelihood_v >= -1.f);
+
+  auto dofU = hasU ? static_cast<float>(n_hits_u) : 0.f;
+  auto dofV = hasV ? static_cast<float>(n_hits_v) : 0.f;
+  auto dofUV = dofU + dofV;
+
+  auto wU = hasU ? (likelihood_u * dofU ) : 0.f;
+  auto wV = hasV ? (likelihood_v *dofV ) :0.f;
+  
+  if ((!hasU && !hasV) || (n_hits_u == 0 && n_hits_v == 0) || dofUV <= std::numeric_limits<float>::epsilon()) return BOGUS;
+  
+  auto likelihood = (wU + wV) / dofUV;
+  if (likelihood >= -1.f) return likelihood;
+  else return BOGUS;
+}
+
+float compute_log_likelihood_ratio(float &likelihood1, float &likelihood2){
+ 
+  if (likelihood1 == BOGUS || likelihood2 == BOGUS) return BOGUS;
+  if (likelihood2 <= std::numeric_limits<float>::epsilon() ) return BOGUS;
+  return std::log(likelihood1/likelihood2); 
+  
+}
+
+float compute_softmax(float &fwd, float &bwd){
+
+  if (fwd == BOGUS || bwd == BOGUS) return BOGUS;
+  
+  float exp_sum = std::exp(fwd) + std::exp(bwd);
+  if (exp_sum <= std::numeric_limits<float>::epsilon()) return BOGUS;
+  
+  return std::exp(fwd) / exp_sum;
+}
+
+float compute_multi_plane_trunc_mean_dEdx(float yz_angle, float trunc_mean_w, float trunc_mean_u, float trunc_mean_v, int n_hits_u, int n_hits_v){
+
+  bool trackAlongW = ( (std::pow(std::sin(yz_angle), 2) < sin2AngleThreshold ));
+  if (trackAlongW && (trunc_mean_w != floatMinValue)) return trunc_mean_w;
+  else{
+    const auto uWeight = std::max(0.f, (n_hits_u * lengthFraction) - nHitsToSkip);
+    const auto vWeight = std::max(0.f, (n_hits_v * lengthFraction) - nHitsToSkip);
+    const auto hasU = (uWeight>0.f && trunc_mean_u != floatMinValue);
+    const auto hasV = (vWeight>0.f && trunc_mean_v != floatMinValue);
+    
+    if (hasU || hasV){
+      float truncatedMeandEdx = 0.f;
+      if (hasU) truncatedMeandEdx += trunc_mean_u * uWeight;
+      if (hasV) truncatedMeandEdx += trunc_mean_v * vWeight;
+      truncatedMeandEdx /= (uWeight + vWeight);
+      return truncatedMeandEdx;
+    }
+    else return BOGUS; 
+  }
+}
+
+void AnalysisEvent::get_multi_plane_Bragg_likelihood(){
+
+  for ( int p = 0; p < num_pf_particles_; ++p ) {
+    unsigned int generation = pfp_generation_->at( p );
+    if ( generation != 2u ) continue;
+    //std::cout << trk_bragg_p_fwd_preferred_w_->at( p ) << std::endl;
+
+    // particle YZ angle & hits in u,v planes
+    float yz_angle = std::atan2( track_dirz_->at( p ), track_diry_->at( p ) );
+    int n_hits_u = pfp_hitsU_->at( p );
+    int n_hits_v = pfp_hitsV_->at( p );
+  
+    // mip likelikelihoods
+    float mip_w = ( bragg_mip_w_->at( p ) >= -1.f) ? bragg_mip_w_->at( p ) : BOGUS;
+    float mip_u = ( bragg_mip_u_->at( p ) >= -1.f) ? bragg_mip_u_->at( p ) : BOGUS;
+    float mip_v = ( bragg_mip_v_->at( p ) >= -1.f) ? bragg_mip_v_->at( p ) : BOGUS;
+
+    float mip_uvw = compute_multi_plane_Bragg_likelihood(mip_w, mip_u, mip_v, yz_angle, n_hits_u, n_hits_v);
+   
+    bragg_mip_uvw_->push_back(mip_uvw);
+    // proton likelihoods
+    float proton_fwd_w = trk_bragg_p_fwd_preferred_w_->at( p ) ? trk_bragg_p_w_->at( p ) : trk_bragg_p_alt_dir_w_->at( p );
+    float proton_bwd_w = ( !(trk_bragg_p_fwd_preferred_w_->at( p )) ) ? trk_bragg_p_w_->at( p ) : trk_bragg_p_alt_dir_w_->at( p );
+       
+    float proton_fwd_u = trk_bragg_p_fwd_preferred_u_->at( p ) ? trk_bragg_p_u_->at( p ) : trk_bragg_p_alt_dir_u_->at( p );
+    float proton_bwd_u = ( !(trk_bragg_p_fwd_preferred_u_->at( p )) ) ? trk_bragg_p_u_->at( p ) : trk_bragg_p_alt_dir_u_->at( p );
+  
+    float proton_fwd_v = trk_bragg_p_fwd_preferred_v_->at( p ) ? trk_bragg_p_v_->at( p ) : trk_bragg_p_alt_dir_v_->at( p );
+    float proton_bwd_v = ( !(trk_bragg_p_fwd_preferred_v_->at( p )) ) ? trk_bragg_p_v_->at( p ) : trk_bragg_p_alt_dir_v_->at( p );
+
+    bragg_p_fwd_w_->push_back(proton_fwd_w);
+    bragg_p_bwd_w_->push_back(proton_bwd_w);
+ 
+    bragg_p_fwd_u_->push_back(proton_fwd_u);
+    bragg_p_bwd_v_->push_back(proton_bwd_u);
+
+    bragg_p_fwd_w_->push_back(proton_fwd_v);
+    bragg_p_bwd_w_->push_back(proton_bwd_v);
+
+
+    float proton_fwd_uvw = compute_multi_plane_Bragg_likelihood(proton_fwd_w, proton_fwd_u, proton_fwd_v, yz_angle, n_hits_u, n_hits_v);
+    float proton_bwd_uvw = compute_multi_plane_Bragg_likelihood(proton_bwd_w, proton_bwd_u, proton_bwd_v, yz_angle, n_hits_u, n_hits_v);
+
+    bragg_p_fwd_uvw_->push_back( proton_fwd_uvw );
+    bragg_p_bwd_uvw_->push_back( proton_bwd_uvw );
+
+    bragg_p_to_MIP_->push_back( compute_log_likelihood_ratio(proton_fwd_uvw, mip_uvw) );
+
+    bragg_p_fwd_2_bwd_->push_back( compute_softmax(proton_fwd_uvw, proton_bwd_uvw) );
+       
+    // muon likelihoods
+    float mu_fwd_w = trk_bragg_mu_fwd_preferred_w_->at( p ) ? trk_bragg_mu_w_->at( p ) : trk_bragg_mu_alt_dir_w_->at( p );
+    float mu_bwd_w = ( !(trk_bragg_mu_fwd_preferred_w_->at( p )) ) ? trk_bragg_mu_w_->at( p ) : trk_bragg_mu_alt_dir_w_->at( p );
+
+    float mu_fwd_u = trk_bragg_mu_fwd_preferred_u_->at( p ) ? trk_bragg_mu_u_->at( p ) : trk_bragg_mu_alt_dir_u_->at( p );
+    float mu_bwd_u = ( !(trk_bragg_mu_fwd_preferred_u_->at( p )) ) ? trk_bragg_mu_u_->at( p ) : trk_bragg_mu_alt_dir_u_->at( p );
+
+    float mu_fwd_v = trk_bragg_mu_fwd_preferred_v_->at( p ) ? trk_bragg_mu_v_->at( p ) : trk_bragg_mu_alt_dir_v_->at( p );
+    float mu_bwd_v = ( !(trk_bragg_mu_fwd_preferred_v_->at( p )) ) ? trk_bragg_mu_v_->at( p ) : trk_bragg_mu_alt_dir_v_->at( p );
+
+    bragg_mu_fwd_w_->push_back(mu_fwd_w);
+    bragg_mu_bwd_w_->push_back(mu_bwd_w);
+
+    bragg_mu_fwd_u_->push_back(mu_fwd_u);
+    bragg_mu_bwd_v_->push_back(mu_bwd_u);
+
+    bragg_mu_fwd_w_->push_back(mu_fwd_v);
+    bragg_mu_bwd_w_->push_back(mu_bwd_v);
+
+
+    float mu_fwd_uvw = compute_multi_plane_Bragg_likelihood(mu_fwd_w, mu_fwd_u, mu_fwd_v, yz_angle, n_hits_u, n_hits_v);
+    float mu_bwd_uvw = compute_multi_plane_Bragg_likelihood(mu_bwd_w, mu_bwd_u, mu_bwd_v, yz_angle, n_hits_u, n_hits_v);
+
+    bragg_mu_fwd_uvw_->push_back( mu_fwd_uvw );
+    bragg_mu_bwd_uvw_->push_back( mu_bwd_uvw );
+
+    // pion likelihoods
+    float pion_fwd_w = trk_bragg_pion_fwd_preferred_w_->at( p ) ? trk_bragg_pion_w_->at( p ) : trk_bragg_pion_alt_dir_w_->at( p );
+    float pion_bwd_w = ( !(trk_bragg_pion_fwd_preferred_w_->at( p )) ) ? trk_bragg_pion_w_->at( p ) : trk_bragg_pion_alt_dir_w_->at( p );
+
+    float pion_fwd_u = trk_bragg_pion_fwd_preferred_u_->at( p ) ? trk_bragg_pion_u_->at( p ) : trk_bragg_pion_alt_dir_u_->at( p );
+    float pion_bwd_u = ( !(trk_bragg_pion_fwd_preferred_u_->at( p )) ) ? trk_bragg_pion_u_->at( p ) : trk_bragg_pion_alt_dir_u_->at( p );
+
+    float pion_fwd_v = trk_bragg_pion_fwd_preferred_v_->at( p ) ? trk_bragg_pion_v_->at( p ) : trk_bragg_pion_alt_dir_v_->at( p );
+    float pion_bwd_v = ( !(trk_bragg_pion_fwd_preferred_v_->at( p )) ) ? trk_bragg_pion_v_->at( p ) : trk_bragg_pion_alt_dir_v_->at( p );
+
+    bragg_pion_fwd_w_->push_back(pion_fwd_w);
+    bragg_pion_bwd_w_->push_back(pion_bwd_w);
+
+    bragg_pion_fwd_u_->push_back(pion_fwd_u);
+    bragg_pion_bwd_v_->push_back(pion_bwd_u);
+
+    bragg_pion_fwd_w_->push_back(pion_fwd_v);
+    bragg_pion_bwd_w_->push_back(pion_bwd_v);
+
+    float pion_fwd_uvw = compute_multi_plane_Bragg_likelihood(pion_fwd_w, pion_fwd_u, pion_fwd_v, yz_angle, n_hits_u, n_hits_v);
+    float pion_bwd_uvw = compute_multi_plane_Bragg_likelihood(pion_bwd_w, pion_bwd_u, pion_bwd_v, yz_angle, n_hits_u, n_hits_v);
+
+    bragg_pion_fwd_uvw_->push_back( pion_fwd_uvw );
+    bragg_pion_bwd_uvw_->push_back( pion_bwd_uvw );
+
+    bragg_pion_to_MIP_->push_back( compute_log_likelihood_ratio(pion_fwd_uvw, mip_uvw) );
+
+    bragg_pion_fwd_2_bwd_->push_back( compute_softmax(pion_fwd_uvw, pion_bwd_uvw) );
+
+    truncated_mean_dEdx_->push_back( compute_multi_plane_trunc_mean_dEdx(yz_angle, trk_trunk_dEdx_w_->at(p), trk_trunk_dEdx_u_->at(p), trk_trunk_dEdx_v_->at(p), n_hits_u, n_hits_v ) );
+  }
+}
+
+
 
 void AnalysisEvent::apply_numu_CC_selection() {
   //use nu_pdg_ == slpdg (from PeLEE ntuple)
@@ -1480,7 +2080,7 @@ void AnalysisEvent::find_pion_candidate() {
     if ( p == muon_candidate_pid_idx_) continue;
 
     // Skip particles with bogus track score 
-    float track_length = pfp_track_score_->at( p );
+    float track_length = track_length_->at( p );
     if (track_length <= 0. ) continue;
 
     float proton_bdt_score = proton_BDT_score_->at( p );
@@ -1510,7 +2110,7 @@ void AnalysisEvent::apply_selection() {
 
   // Set sel_nu_mu_cc_ by applying those criteria
   this->apply_numu_CC_selection();
-
+  this->get_multi_plane_Bragg_likelihood();
   // Count number of track like objects reconstructed
   // Fail the shower cut if any showers were reconstructed
   // NOTE: We could do this quicker like this,
@@ -1692,6 +2292,82 @@ void AnalysisEvent::find_lead_p_candidate() {
   else lead_p_candidate_idx_ = BOGUS_INDEX;
 }
 
+void compute_GKI(const TVector3& p3mu, std::vector<TVector3>& p3p_v,/* const TVector3& p3p,*/ const TVector3& p3pi, 
+  float& muE, float& pE, float& piE, float& nuE, float& pKE, float& delta_pT, float& delta_pL, float& delta_pL2,
+  TVector3& q, float& pn, float& pn2,  float& delta_alpha3D, float& delta_phi3d_had, float& delta_phi3d_mu, float& delta_phi3d_p, float& delta_phi3d_pi)
+{
+  // Energies of particles 
+  muE = std::sqrt(std::pow(MUON_MASS, 2) + p3mu.Mag2());
+  //pE = std::sqrt(std::pow(PROTON_MASS, 2) + p3p.Mag2());
+  piE = std::sqrt(std::pow(PI_PLUS_MASS, 2) + p3pi.Mag2());
+  pE = 0.;
+  pKE = 0.;
+
+  
+  //std::cout << p3p_v.size() << std::endl; 
+  // MyPointer< std::vector<TVector3> >
+  TVector3 p3p_total;
+  //std::cout << "pE " <<  pE << std::endl;
+  //std::cout << "pKE " <<  pKE << std::endl;
+  //std::cout << "p3p_tptal " << p3p_total.X() << " " << p3p_total.Y() << " " << p3p_total.Z() << std::endl;
+  for (int i = 0; i < p3p_v.size(); i++){
+    //std::cout << i << std::endl;
+    TVector3 temp_p3 = p3p_v.at(i);
+    p3p_total += temp_p3;
+    float temp_pE = std::sqrt( std::pow(PROTON_MASS, 2) + temp_p3.Mag2() ) ; 
+    pE += temp_pE;
+    pKE += temp_pE - PROTON_MASS;
+    /*std::cout << i << std::endl;
+    std::cout << "temp_pE " <<  temp_pE << std::endl;
+    std::cout << "pE " <<  pE << std::endl;
+    std::cout << "temp_pKE " <<  temp_pE - PROTON_MASS << std::endl;
+    std::cout << "pKE " <<  pKE << std::endl;
+    std::cout << "temp_p3 " << temp_p3.X() << " " << temp_p3.Y() << " " << temp_p3.Z() << std::endl;
+    std::cout << "p3p_tptal " << p3p_total.X() << " " << p3p_total.Y() << " " << p3p_total.Z() << std::endl;
+  */}
+  //pKE = pE - PROTON_MASS;
+  // Transverse momenta
+  TVector3 pTmu(p3mu.X(), p3mu.Y(), 0.);
+  TVector3 pTp(p3p_total.X(), p3p_total.Y(), 0.);
+  TVector3 pTpi(p3pi.X(), p3pi.Y(), 0.);
+  
+  // Transverse missing momentum magnitude
+  delta_pT = (pTmu + pTp + pTpi).Mag();
+  // Longitudinal momenta
+  TVector3 pLmu(0., 0., p3mu.Z());
+  TVector3 pLp(0., 0., p3p_total.Z());
+  TVector3 pLpi(0., 0.,  p3pi.Z());
+  
+  // Define R to simplify formula
+  // Define mass of remnant nucleus
+  //float R = TARGET_MASS + pLmu.Mag() + pLp.Mag() + pLpi.Mag() - muE - pE - piE;
+  float R = TARGET_MASS + (pLmu + pLp + pLpi).Mag() - muE - pE - piE;
+  float mf = TARGET_MASS - PROTON_MASS + MEAN_EXCITATION_ENERGY;
+
+  // Longitudinal missing momentum magnitude from T2K paper (PhysRevD.103.112009) 
+  delta_pL = 0.5 * R - 0.5 * ( ( std::pow(mf, 2) + std::pow(delta_pT, 2) ) / R); 
+  
+  // Compute E_cal estimator and longitudinal missing momentum magnitude from UB GKI paper to compare later
+  nuE = muE + piE + pKE + MEAN_EXCITATION_ENERGY; 
+  //delta_pL2 = pLmu.Mag() + pLp.Mag() + pLpi.Mag() - nuE;
+  delta_pL2 = (pLmu + pLp + pLpi).Mag() - nuE;
+  // Compute q momentum tranfer Q
+  TVector3 nuEz(0., 0., nuE); 
+  q = nuEz - p3mu;
+
+  // Compute GKI 
+  pn = std::sqrt( std::pow(delta_pL, 2) + std::pow(delta_pT, 2) );
+  pn2 =  std::sqrt( std::pow(delta_pL2, 2) + std::pow(delta_pT, 2) );
+  
+  TVector3 pn_vec = p3mu + p3p_total + p3pi - nuEz;
+  TVector3 p3had = p3p_total + p3pi;
+  delta_alpha3D = std::acos ( ( q.X()*pn_vec.X() + q.Y()*pn_vec.Y() + q.Z()*pn_vec.Z() ) / ( q.Mag() * pn_vec.Mag()) ) ;
+  delta_phi3d_had = std::acos ( ( q.X()*p3had.X() + q.Y()*p3had.Y() + q.Z()*p3had.Z() ) / ( q.Mag() * p3had.Mag()) );
+  delta_phi3d_p = std::acos ( ( q.X()*p3p_total.X() + q.Y()*p3p_total.Y() + q.Z()*p3p_total.Z() ) / ( q.Mag() * p3p_total.Mag()) );
+  delta_phi3d_pi = std::acos ( ( q.X()*p3pi.X() + q.Y()*p3pi.Y() + q.Z()*p3pi.Z() ) / ( q.Mag() * p3pi.Mag()) );
+  delta_phi3d_mu = std::acos ( ( q.X()*p3mu.X() + q.Y()*p3mu.Y() + q.Z()*p3mu.Z() ) / ( q.Mag() * p3mu.Mag()) );
+
+}
 // Helper function for computing STVs (either reco or true)
 void compute_stvs( const TVector3& p3mu, const TVector3& p3p, float& delta_pT,
   float& delta_phiT, float& delta_alphaT, float& delta_pL, float& pn,
@@ -1822,7 +2498,8 @@ void AnalysisEvent::compute_observables() {
     // was already set when the selection was applied. Use it to choose the
     // best momentum estimator to use.
     float pion_mom = LOW_FLOAT;
-    pion_mom = track_range_mom_mu_->at( pion_candidate_idx_ );
+    float trk_length = track_length_->at( pion_candidate_idx_ ); 
+    pion_mom =  a + b*trk_length - c*std::pow(trk_length, -1.*d); 
     
     p3pi = TVector3( pi_dirx, pi_diry, pi_dirz );
     p3pi = p3pi.Unit() * pion_mom;
@@ -1878,11 +2555,13 @@ void AnalysisEvent::compute_observables() {
 
   // Compute reco STVs if we have both a muon candidate
   // and a leading proton candidate in the event
-  if ( muon && lead_p ) {
-    compute_stvs( p3mu, p3p, delta_pT_, delta_phiT_,
-      delta_alphaT_, delta_pL_, pn_, delta_pTx_, delta_pTy_ );
-
+  if ( muon && lead_p && pion ) {
+    //compute_stvs( p3mu, p3p, delta_pT_, delta_phiT_,
+      //delta_alphaT_, delta_pL_, pn_, delta_pTx_, delta_pTy_ );
+    compute_GKI( p3mu, *p3_p_vec_, p3pi, muE_, pE_, piE_, reco_Ecal_, pKE_,
+      delta_pT_, delta_pL_, delta_pL2_, *q_, pn_, pn2_, delta_alpha3D_, delta_phi3d_had_, delta_phi3d_mu_, delta_phi3d_p_, delta_phi3d_pi_ );
     theta_mu_p_ = std::acos( p3mu.Dot(p3p) / p3mu.Mag() / p3p.Mag() );
+    theta_mu_cpi_ = std::acos( p3mu.Dot(p3pi) / p3mu.Mag() / p3pi.Mag() );
   }
 }
 
@@ -1972,7 +2651,6 @@ void AnalysisEvent::compute_mc_truth_observables() {
   std::sort( mc_p3_p_vec_->begin(), mc_p3_p_vec_->end(), [](const TVector3& a,
     const TVector3& b) -> bool { return a.Mag() > b.Mag(); } );
 
-  //mc_n_protons_ = mc_p3_p_vec_.size(); 
   // If the event contains a leading proton, then set the 3-momentum
   // accordingly
   bool true_lead_p = ( max_mom_p != LOW_FLOAT );
@@ -1982,23 +2660,22 @@ void AnalysisEvent::compute_mc_truth_observables() {
     return;
   }
 
-  // Compute angle between muon and pion if event contains a muon and a leading pion
- 
+  // Compute angle between muon and pion if event contains a muon pion and a leading proton
+  // Compute GKI 
   bool true_lead_cpi = ( max_mom_cpi != LOW_FLOAT ); 
-  if (true_muon && true_lead_cpi) {
+  if (true_muon && true_lead_cpi && true_lead_p) {
+
     mc_theta_mu_cpi_ = std::acos( mc_p3_mu_->Dot(*mc_p3_cpi_)
       / mc_p3_mu_->Mag() / mc_p3_cpi_->Mag() );
-  }
-
-  // Compute true STVs if the event contains both a muon and a leading
-  // proton
-  if ( true_muon && true_lead_p ) {
-    compute_stvs( *mc_p3_mu_, *mc_p3_lead_p_, mc_delta_pT_, mc_delta_phiT_,
-      mc_delta_alphaT_, mc_delta_pL_, mc_pn_, mc_delta_pTx_, mc_delta_pTy_ );
-
+  
     mc_theta_mu_p_ = std::acos( mc_p3_mu_->Dot(*mc_p3_lead_p_)
       / mc_p3_mu_->Mag() / mc_p3_lead_p_->Mag() );
+
+    compute_GKI( *mc_p3_mu_, *mc_p3_p_vec_, *mc_p3_cpi_, mc_muE_, mc_pE_, mc_piE_, mc_Ecal_, mc_pKE_,
+      mc_delta_pT_, mc_delta_pL_, mc_delta_pL2_, *mc_q_, mc_pn_, mc_pn2_, mc_delta_alpha3D_, mc_delta_phi3d_had_, mc_delta_phi3d_mu_, mc_delta_phi3d_p_, mc_delta_phi3d_pi_);
+
   }
+
 }
 
 void analyzer(const std::string& in_file_name,
